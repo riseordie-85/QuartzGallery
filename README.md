@@ -1,4 +1,4 @@
-# Gallery
+# Quartz Gallery
 
 A replacement for the stock Android gallery app. Kotlin + Jetpack Compose, **Android 13+**.
 

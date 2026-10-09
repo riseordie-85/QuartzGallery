@@ -98,7 +98,7 @@ fun PhotosScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             if (selected.isEmpty()) {
-                TopAppBar(title = { Text("Gallery") }, scrollBehavior = scrollBehavior)
+                TopAppBar(title = { Text("Quartz Gallery") }, scrollBehavior = scrollBehavior)
             } else {
                 SelectionTopBar(
                     count = selected.size,

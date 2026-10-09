@@ -149,7 +149,7 @@ private fun NoAccessScreen(onRequest: () -> Unit, onOpenSettings: () -> Unit) {
             Text("Allow access to your photos and videos", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Gallery needs permission to show the photos and videos on this phone. Nothing leaves your device.",
+                "Quartz Gallery needs permission to show the photos and videos on this phone. Nothing leaves your device.",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
             )
