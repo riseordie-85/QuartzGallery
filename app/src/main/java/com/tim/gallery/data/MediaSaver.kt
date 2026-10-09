@@ -1,0 +1,265 @@
+package com.tim.gallery.data
+
+import android.app.WallpaperManager
+import android.content.ContentValues
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Log
+import androidx.exifinterface.media.ExifInterface
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.IOException
+import java.io.InputStream
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+object MediaSaver {
+
+    const val FOLDER = "Gallery"
+    val FOLDER_LABEL = "${Environment.DIRECTORY_PICTURES}/$FOLDER"
+
+    /** Formats this app can write back over an original. */
+    private val OVERWRITABLE = setOf("image/jpeg", "image/png", "image/webp")
+
+    fun canOverwrite(mimeType: String): Boolean = mimeType.lowercase() in OVERWRITABLE
+
+    fun mimeFor(format: Bitmap.CompressFormat): String = when (format) {
+        Bitmap.CompressFormat.PNG -> "image/png"
+        Bitmap.CompressFormat.WEBP_LOSSY, Bitmap.CompressFormat.WEBP_LOSSLESS -> "image/webp"
+        else -> "image/jpeg"
+    }
+
+    fun extensionFor(format: Bitmap.CompressFormat): String = when (format) {
+        Bitmap.CompressFormat.PNG -> "png"
+        Bitmap.CompressFormat.WEBP_LOSSY, Bitmap.CompressFormat.WEBP_LOSSLESS -> "webp"
+        else -> "jpg"
+    }
+
+    /** Matching encoder for an original's mime type (used when overwriting). */
+    fun formatFor(mimeType: String): Bitmap.CompressFormat = when (mimeType.lowercase()) {
+        "image/png" -> Bitmap.CompressFormat.PNG
+        "image/webp" -> Bitmap.CompressFormat.WEBP_LOSSY
+        else -> Bitmap.CompressFormat.JPEG
+    }
+
+    /**
+     * Saves a bitmap as a new image. Tries [relativePath] first (e.g. the original's album)
+     * and falls back to Pictures/Gallery if Android won't put an image there.
+     * [exifFrom] copies date, camera and location info from another photo (JPEG only).
+     */
+    suspend fun saveBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        displayName: String,
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.JPEG,
+        relativePath: String = FOLDER_LABEL,
+        dateTaken: Long = System.currentTimeMillis(),
+        exifFrom: Uri? = null,
+    ): Uri? = withContext(Dispatchers.IO) {
+        val bytes = try {
+            encode(context, bitmap, format, exifFrom)
+        } catch (e: Exception) {
+            Log.w(TAG, "Encoding failed", e)
+            return@withContext null
+        }
+        insert(context, bytes, displayName, mimeFor(format), relativePath, dateTaken)
+            ?: if (relativePath != FOLDER_LABEL) {
+                insert(context, bytes, displayName, mimeFor(format), FOLDER_LABEL, dateTaken)
+            } else {
+                null
+            }
+    }
+
+    private fun insert(
+        context: Context,
+        bytes: ByteArray,
+        displayName: String,
+        mime: String,
+        relativePath: String,
+        dateTaken: Long,
+    ): Uri? {
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, mime)
+            put(MediaStore.Images.Media.RELATIVE_PATH, relativePath)
+            put(MediaStore.Images.Media.DATE_TAKEN, dateTaken)
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val uri = try {
+            resolver.insert(collection, values)
+        } catch (e: Exception) {
+            Log.w(TAG, "Can't create an image in $relativePath", e)
+            null
+        } ?: return null
+        return try {
+            val stream = resolver.openOutputStream(uri) ?: throw IOException("No output stream")
+            stream.use { it.write(bytes) }
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            uri
+        } catch (e: Exception) {
+            Log.w(TAG, "Writing $displayName failed", e)
+            resolver.delete(uri, null, null)
+            null
+        }
+    }
+
+    /**
+     * Replaces an existing image's contents. The caller must already hold write access
+     * (MediaStore.createWriteRequest). Keeps the original's date/camera/location info.
+     */
+    suspend fun overwrite(
+        context: Context,
+        uri: Uri,
+        bitmap: Bitmap,
+        format: Bitmap.CompressFormat,
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            // Encode first: it reads EXIF from the original before we replace it
+            val bytes = encode(context, bitmap, format, exifFrom = uri)
+            val stream = context.contentResolver.openOutputStream(uri, "wt")
+                ?: throw IOException("No output stream")
+            stream.use { it.write(bytes) }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Overwrite failed", e)
+            false
+        }
+    }
+
+    private fun encode(
+        context: Context,
+        bitmap: Bitmap,
+        format: Bitmap.CompressFormat,
+        exifFrom: Uri?,
+    ): ByteArray {
+        val raw = ByteArrayOutputStream().also { out ->
+            if (!bitmap.compress(format, if (format == Bitmap.CompressFormat.PNG) 100 else 95, out)) {
+                throw IOException("Compress failed")
+            }
+        }.toByteArray()
+        if (exifFrom == null || format != Bitmap.CompressFormat.JPEG) return raw
+        return try {
+            copyExif(context, exifFrom, raw)
+        } catch (e: Exception) {
+            Log.w(TAG, "Couldn't copy photo info", e)
+            raw
+        }
+    }
+
+    private val EXIF_TAGS = listOf(
+        ExifInterface.TAG_DATETIME,
+        ExifInterface.TAG_DATETIME_ORIGINAL,
+        ExifInterface.TAG_DATETIME_DIGITIZED,
+        ExifInterface.TAG_OFFSET_TIME,
+        ExifInterface.TAG_OFFSET_TIME_ORIGINAL,
+        ExifInterface.TAG_OFFSET_TIME_DIGITIZED,
+        ExifInterface.TAG_SUBSEC_TIME,
+        ExifInterface.TAG_SUBSEC_TIME_ORIGINAL,
+        ExifInterface.TAG_MAKE,
+        ExifInterface.TAG_MODEL,
+        ExifInterface.TAG_GPS_LATITUDE,
+        ExifInterface.TAG_GPS_LATITUDE_REF,
+        ExifInterface.TAG_GPS_LONGITUDE,
+        ExifInterface.TAG_GPS_LONGITUDE_REF,
+        ExifInterface.TAG_GPS_ALTITUDE,
+        ExifInterface.TAG_GPS_ALTITUDE_REF,
+        ExifInterface.TAG_GPS_TIMESTAMP,
+        ExifInterface.TAG_GPS_DATESTAMP,
+    )
+
+    private fun openOriginal(context: Context, uri: Uri): InputStream? = try {
+        // Unredacted file, so location info survives (needs ACCESS_MEDIA_LOCATION)
+        context.contentResolver.openInputStream(MediaStore.setRequireOriginal(uri))
+    } catch (e: Exception) {
+        context.contentResolver.openInputStream(uri)
+    }
+
+    private fun copyExif(context: Context, from: Uri, jpeg: ByteArray): ByteArray {
+        val source = openOriginal(context, from)?.use { ExifInterface(it) } ?: return jpeg
+        val temp = File.createTempFile("edit", ".jpg", context.cacheDir)
+        try {
+            temp.writeBytes(jpeg)
+            val target = ExifInterface(temp.absolutePath)
+            for (tag in EXIF_TAGS) {
+                source.getAttribute(tag)?.let { target.setAttribute(tag, it) }
+            }
+            // Pixels are already upright
+            target.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+            target.saveAttributes()
+            return temp.readBytes()
+        } finally {
+            temp.delete()
+        }
+    }
+
+    /** Decodes an image upright (EXIF rotation applied), capped at [maxPx] on the longest side. */
+    fun decodeUpright(context: Context, uri: Uri, maxPx: Int = 4096): Bitmap {
+        val source = ImageDecoder.createSource(context.contentResolver, uri)
+        return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val w = info.size.width
+            val h = info.size.height
+            val longest = max(w, h)
+            if (longest > maxPx) {
+                val s = maxPx.toFloat() / longest
+                decoder.setTargetSize(
+                    (w * s).roundToInt().coerceAtLeast(1),
+                    (h * s).roundToInt().coerceAtLeast(1),
+                )
+            }
+        }
+    }
+
+    /**
+     * Sets a photo as wallpaper. [which] = WallpaperManager.FLAG_SYSTEM, FLAG_LOCK or both.
+     * Android center-crops it to fill the screen.
+     */
+    suspend fun setWallpaper(context: Context, uri: Uri, which: Int): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val bitmap = decodeUpright(context, uri, maxPx = 4096)
+            WallpaperManager.getInstance(context).setBitmap(bitmap, null, true, which)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Grabs the exact frame at [positionMs] from a video and saves it as a photo. */
+    suspend fun saveVideoFrame(
+        context: Context,
+        videoUri: Uri,
+        positionMs: Long,
+        baseName: String,
+    ): Uri? = withContext(Dispatchers.IO) {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, videoUri)
+            val frame = retriever.getFrameAtTime(
+                positionMs * 1000L,
+                MediaMetadataRetriever.OPTION_CLOSEST,
+            ) ?: return@withContext null
+            val stem = baseName.substringBeforeLast('.').ifBlank { "video" }
+            saveBitmap(context, frame, "${stem}_still_${positionMs}ms.jpg")
+        } catch (e: Exception) {
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private const val TAG = "MediaSaver"
+}
