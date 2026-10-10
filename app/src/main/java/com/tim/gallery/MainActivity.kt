@@ -120,6 +120,8 @@ private fun GalleryRoot() {
                         onOpenAlbum = { key -> nav.navigate("album/${encodeKey(key)}") },
                         onOpenTrash = { nav.navigate("trash") },
                         onOpenPersonal = { nav.navigate("personal") },
+                        onOpenMap = { nav.navigate("map") },
+                        onOpenCleanup = { nav.navigate("cleanup") },
                         onOpenSettings = { nav.navigate("settings") },
                         bottomBar = { MainTabsBar(MainTab.ALBUMS) { nav.switchTab(it) } },
                     )
@@ -137,6 +139,23 @@ private fun GalleryRoot() {
             composable("settings") {
                 MainBackground {
                     SettingsScreen(onBack = { nav.popBackStack() }, onOpenPersonal = { nav.navigate("personal") })
+                }
+            }
+            composable(
+                "map?lat={lat}&lon={lon}",
+                arguments = listOf(
+                    navArgument("lat") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("lon") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
+            ) { entry ->
+                MainBackground {
+                    com.tim.gallery.map.MapScreen(
+                        vm = vm,
+                        onBack = { nav.popBackStack() },
+                        onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(AlbumOps.ALL_KEY)}") },
+                        focusLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        focusLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                    )
                 }
             }
             composable("personal") {

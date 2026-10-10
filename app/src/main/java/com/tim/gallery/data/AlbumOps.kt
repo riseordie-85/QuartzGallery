@@ -19,6 +19,9 @@ object AlbumOps {
 
     fun isFavorites(key: String): Boolean = key == FAVORITES_KEY
 
+    /** Every photo and video, unfiltered (used when opening something from the map). */
+    const val ALL_KEY = "@all"
+
     /** Trash isn't a folder either; it's Android's system trash. */
     const val TRASH_KEY = "@trash"
 

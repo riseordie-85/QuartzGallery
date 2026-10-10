@@ -28,6 +28,8 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -72,6 +74,8 @@ fun AlbumsScreen(
     onOpenAlbum: (String) -> Unit,
     onOpenTrash: () -> Unit,
     onOpenPersonal: () -> Unit,
+    onOpenMap: () -> Unit,
+    onOpenCleanup: () -> Unit,
     onOpenSettings: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -133,6 +137,12 @@ fun AlbumsScreen(
             }
             item(key = AlbumOps.TRASH_KEY) {
                 TrashCard(count = trash.size, onClick = onOpenTrash)
+            }
+            item(key = "places") {
+                IconCard(icon = Icons.Outlined.Map, title = "Places", subtitle = "Photos on a map", onClick = onOpenMap)
+            }
+            item(key = "cleanup") {
+                IconCard(icon = Icons.Outlined.CleaningServices, title = "Free up space", subtitle = "Big files, duplicates", onClick = onOpenCleanup)
             }
             item(key = "personal") {
                 IconCard(

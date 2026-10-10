@@ -104,8 +104,9 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     /** Items in one album (a folder, or the Favorites album), newest first. */
     fun albumItems(key: String): StateFlow<List<GalleryItem>> = albumFlows.getOrPut(key) {
         val favorites = AlbumOps.isFavorites(key)
+        val everything = key == AlbumOps.ALL_KEY
         val belongs: (GalleryItem) -> Boolean = { item ->
-            if (favorites) item.isFavorite else item.relativePath == key
+            everything || if (favorites) item.isFavorite else item.relativePath == key
         }
         combine(all, AppSettings.sort) { list, sort -> list.filter(belongs).sortedFor(sort) }
             .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, all.value.filter(belongs))
