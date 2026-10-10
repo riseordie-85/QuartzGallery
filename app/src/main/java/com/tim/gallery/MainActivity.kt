@@ -182,7 +182,7 @@ private fun GalleryRoot() {
                     albumKey = entry.arguments?.getString("album")?.let { decodeKey(it) },
                     onBack = { nav.popBackStack() },
                     onPlay = { id -> nav.navigate("player/$id") },
-                    onEdit = { id -> nav.navigate("editor/$id") },
+                    onEdit = { id -> nav.navigate(if (vm.find(id)?.isVideo == true) "videoedit/$id" else "editor/$id") },
                     onOpenPersonal = { nav.navigate("personal") },
                 )
             }
@@ -195,6 +195,17 @@ private fun GalleryRoot() {
                     LaunchedEffect(Unit) { nav.popBackStack() }
                 } else {
                     VideoPlayerScreen(uri = item.uri, title = item.name, onBack = { nav.popBackStack() })
+                }
+            }
+            composable(
+                "videoedit/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            ) { entry ->
+                val item = vm.find(entry.arguments?.getLong("id") ?: 0L)
+                if (item == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                } else {
+                    com.tim.gallery.video.VideoEditScreen(vm = vm, item = item, onClose = { nav.popBackStack() })
                 }
             }
             composable(

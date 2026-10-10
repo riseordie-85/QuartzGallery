@@ -22,6 +22,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -278,6 +279,7 @@ fun ViewerScreen(
                     } else {
                         if (current.isVideo) {
                             ActionButton(Icons.Filled.PlayArrow, "Play") { onPlay(current.id) }
+                            ActionButton(Icons.Outlined.ContentCut, "Trim") { onEdit(current.id) }
                         } else {
                             ActionButton(Icons.Outlined.Tune, "Edit") { onEdit(current.id) }
                         }
