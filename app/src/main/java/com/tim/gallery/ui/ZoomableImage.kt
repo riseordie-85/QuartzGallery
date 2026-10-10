@@ -44,12 +44,14 @@ fun ZoomableImage(
     onTap: () -> Unit,
     onZoomChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onLongPress: (() -> Unit)? = null,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     val tap by rememberUpdatedState(onTap)
     val zoomChanged by rememberUpdatedState(onZoomChange)
+    val longPress by rememberUpdatedState(onLongPress)
 
     fun clamp(o: Offset, s: Float): Offset {
         val maxX = boxSize.width * (s - 1f) / 2f
@@ -74,6 +76,7 @@ fun ZoomableImage(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { tap() },
+                    onLongPress = { longPress?.invoke() },
                     onDoubleTap = { p ->
                         if (scale > 1.01f) {
                             scale = 1f

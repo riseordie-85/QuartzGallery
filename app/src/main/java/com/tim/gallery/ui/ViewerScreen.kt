@@ -22,6 +22,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.outlined.MotionPhotosOn
 import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.verticalScroll
@@ -126,10 +133,20 @@ fun ViewerScreen(
     var renaming by remember { mutableStateOf<GalleryItem?>(null) }
     var confirmDeleteForever by remember { mutableStateOf<GalleryItem?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+    var motionFile by remember { mutableStateOf<Pair<Long, java.io.File>?>(null) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(pagerState.currentPage) { zoomed = false }
+    LaunchedEffect(pagerState.currentPage) {
+        zoomed = false
+        motionFile = null
+    }
 
     val current = items.getOrNull(pagerState.currentPage)
+    // Ultra HDR photos: switch the screen into HDR mode while one is showing
+    val hdr by produceState(false, current?.id, current?.modified) {
+        value = current?.let { UltraHdr.isUltraHdr(context, it) } ?: false
+    }
+    HdrWindowMode(hdr)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
@@ -154,13 +171,48 @@ fun ViewerScreen(
                         .size(2560)
                         .build()
                 }
-                ZoomableImage(
-                    model = request,
-                    contentDescription = item.name,
-                    isCurrent = page == pagerState.currentPage,
-                    onTap = { chromeVisible = !chromeVisible },
-                    onZoomChange = { if (page == pagerState.currentPage) zoomed = it },
-                )
+                val motionOffset by produceState<Long?>(null, item.id, item.modified) {
+                    value = MotionPhotos.videoOffset(context, item)
+                }
+                Box(Modifier.fillMaxSize()) {
+                    ZoomableImage(
+                        model = request,
+                        contentDescription = item.name,
+                        isCurrent = page == pagerState.currentPage,
+                        onTap = { chromeVisible = !chromeVisible },
+                        onZoomChange = { if (page == pagerState.currentPage) zoomed = it },
+                        onLongPress = motionOffset?.let { off ->
+                            {
+                                scope.launch { motionFile = MotionPhotos.extract(context, item, off)?.let { item.id to it } }
+                            }
+                        },
+                    )
+                    val playing = motionFile?.takeIf { it.first == item.id && page == pagerState.currentPage }
+                    if (playing != null) {
+                        MotionPlayer(playing.second, onEnded = { motionFile = null }, modifier = Modifier.fillMaxSize())
+                    }
+                    if (motionOffset != null && chromeVisible && playing == null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .statusBarsPadding()
+                                .padding(top = 64.dp, end = 12.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .clickable {
+                                    motionOffset?.let { off ->
+                                        scope.launch { motionFile = MotionPhotos.extract(context, item, off)?.let { item.id to it } }
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Icon(Icons.Outlined.MotionPhotosOn, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Play motion", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
             }
         }
 
