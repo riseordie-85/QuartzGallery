@@ -187,9 +187,13 @@ fun ViewerScreen(
                 val motionOffset by produceState<Long?>(null, item.id, item.modified) {
                     value = MotionPhotos.videoOffset(context, item)
                 }
+                val animated = rememberAnimatedImage(item.uri, item.mimeType, item.name, item.modified)
                 Box(Modifier.fillMaxSize()) {
                     ZoomableImage(
                         model = request,
+                        content = animated?.let { d ->
+                            { m -> AnimatedDrawableView(d, playing = page == pagerState.currentPage, modifier = m) }
+                        },
                         contentDescription = item.name,
                         isCurrent = page == pagerState.currentPage,
                         onTap = { chromeVisible = !chromeVisible },

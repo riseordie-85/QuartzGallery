@@ -286,6 +286,18 @@ private fun MediaTile(
                         .padding(horizontal = 5.dp, vertical = 1.dp),
                 )
             }
+            if (item.mimeType.equals("image/gif", ignoreCase = true)) {
+                Text(
+                    "GIF",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
             if (item.isFavorite) {
                 Icon(
                     Icons.Filled.Favorite,

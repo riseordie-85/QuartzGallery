@@ -305,8 +305,10 @@ private fun ExternalViewer(uri: Uri, mime: String?, onClose: () -> Unit) {
         VideoPlayerScreen(uri = uri, title = uri.lastPathSegment ?: "Video", onBack = onClose)
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
+            val animated = com.tim.gallery.ui.rememberAnimatedImage(uri, mime, uri.lastPathSegment)
             ZoomableImage(
                 model = uri,
+                content = animated?.let { d -> { m -> com.tim.gallery.ui.AnimatedDrawableView(d, playing = true, modifier = m) } },
                 contentDescription = null,
                 isCurrent = true,
                 onTap = {},

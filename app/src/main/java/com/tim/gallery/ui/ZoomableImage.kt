@@ -45,6 +45,8 @@ fun ZoomableImage(
     onZoomChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onLongPress: (() -> Unit)? = null,
+    /** Draws the picture instead of loading [model] (used for animated GIFs). Gets the zoom/pan modifier. */
+    content: (@Composable (Modifier) -> Unit)? = null,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -123,18 +125,23 @@ fun ZoomableImage(
                 }
             },
     ) {
-        AsyncImage(
-            model = model,
-            contentDescription = contentDescription,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
-                },
-        )
+        val imageModifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                translationX = offset.x
+                translationY = offset.y
+            }
+        if (content != null) {
+            content(imageModifier)
+        } else {
+            AsyncImage(
+                model = model,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Fit,
+                modifier = imageModifier,
+            )
+        }
     }
 }
