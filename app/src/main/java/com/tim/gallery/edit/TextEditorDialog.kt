@@ -18,9 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -71,8 +69,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.min
@@ -161,19 +157,10 @@ fun TextEditorDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
+    FullScreenDialog(onDismissRequest = onDismiss, background = Color(0xFF101010)) {
         // Inside the dialog, so the text field is attached before focus is requested
         LaunchedEffect(Unit) { if (initial == null) runCatching { focus.requestFocus() } }
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xF2101010))
-                .safeDrawingPadding()
-                .imePadding(),
-        ) {
+        Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Cancel", tint = Color.White) }
                 Box(Modifier.weight(1f))

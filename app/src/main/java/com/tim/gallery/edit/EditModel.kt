@@ -173,6 +173,8 @@ data class StickerLayer(
     override val scale: Float = 0.4f,
     override val rotation: Float = 0f,
     override val opacity: Float = 1f,
+    /** Squash or stretch: >1 wider, <1 taller than the picture's own shape. */
+    val stretch: Float = 1f,
 ) : Layer() {
     override fun moved(cx: Float, cy: Float, scale: Float, rotation: Float) =
         copy(cx = cx, cy = cy, scale = scale, rotation = rotation)

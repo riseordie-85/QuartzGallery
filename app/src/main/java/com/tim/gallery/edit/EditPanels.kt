@@ -545,6 +545,7 @@ private fun propsFor(layer: Layer): List<LayerProp> = when (layer) {
         layer.kind == ShapeKind.ROUNDED -> listOf(LayerProp.FILL, LayerProp.OUTLINE, LayerProp.THICKNESS, LayerProp.STRETCH, LayerProp.CORNERS)
         else -> listOf(LayerProp.FILL, LayerProp.OUTLINE, LayerProp.THICKNESS, LayerProp.STRETCH)
     } + listOf(LayerProp.OPACITY, LayerProp.POSITION)
+    is StickerLayer -> listOf(LayerProp.OPACITY, LayerProp.STRETCH, LayerProp.POSITION)
     else -> listOf(LayerProp.OPACITY, LayerProp.POSITION)
 }
 
@@ -647,7 +648,17 @@ fun MarkupPanel(
                     onChange = { onChange(shape.copy(strokeWidth = it), "stroke-$id") },
                     onDone = onDone,
                 )
-                LayerProp.STRETCH -> if (shape != null) LabeledSlider(
+                LayerProp.STRETCH -> if (selected is StickerLayer) LabeledSlider(
+                    label = "Stretch (wide ↔ tall)",
+                    value = -kotlin.math.ln(selected.stretch),
+                    range = -2f..2f,
+                    valueText = if (kotlin.math.abs(selected.stretch - 1f) < 0.01f) "Original" else String.format(Locale.US, "%.2f×", selected.stretch),
+                    onChange = { v ->
+                        val snapped = if (kotlin.math.abs(v) < 0.05f) 0f else v
+                        onChange(selected.copy(stretch = kotlin.math.exp(-snapped)), "stretch-$id")
+                    },
+                    onDone = onDone,
+                ) else if (shape != null) LabeledSlider(
                     label = "Stretch (wide ↔ tall)",
                     value = -kotlin.math.ln(shape.aspect),
                     range = -2f..2f,

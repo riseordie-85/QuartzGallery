@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -74,8 +73,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.tim.gallery.data.Cutout
 import com.tim.gallery.data.CutoutException
 import com.tim.gallery.data.GalleryItem
@@ -519,16 +516,8 @@ fun WatermarkEditorDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xFF121212))
-                .safeDrawingPadding()
-        ) {
+    FullScreenDialog(onDismissRequest = { if (!busy) onDismiss() }) {
+        Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
                 IconButton(onClick = onDismiss, enabled = !busy) { Icon(Icons.Filled.Close, contentDescription = "Cancel", tint = Color.White) }
                 Text(

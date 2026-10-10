@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -132,13 +133,18 @@ fun OutputView(
                 var wasSelected = false
                 if (selected != null) {
                     val sz = EditRenderer.layerSize(selected, out, assets)
-                    val del = handlePoint(selected, out, sz, -1f, -1f)
-                    val xf = handlePoint(selected, out, sz, 1f, 1f)
-                    mode = when {
-                        (p0 - del).getDistance() <= slop * 1.4f -> GestureMode.DELETE
-                        (p0 - xf).getDistance() <= slop * 1.4f -> GestureMode.HANDLE
-                        else -> GestureMode.NONE
+                    // Nearest handle under the finger wins
+                    val candidates = buildList {
+                        add(GestureMode.DELETE to handlePoint(selected, out, sz, -1f, -1f))
+                        add(GestureMode.HANDLE to handlePoint(selected, out, sz, 1f, 1f))
+                        if (canStretchWidth(selected)) add(GestureMode.WIDTH to handlePoint(selected, out, sz, 1f, 0f))
+                        if (canStretchHeight(selected)) add(GestureMode.HEIGHT to handlePoint(selected, out, sz, 0f, 1f))
                     }
+                    mode = candidates
+                        .map { (m, pt) -> m to (p0 - pt).getDistance() }
+                        .filter { it.second <= slop * 1.4f }
+                        .minByOrNull { it.second }
+                        ?.first ?: GestureMode.NONE
                 }
                 if (mode == GestureMode.NONE) {
                     val hit = layers.asReversed().firstOrNull { hits(it, p0, out, assets, slop * 0.5f) }
@@ -193,6 +199,13 @@ fun OutputView(
                                     current = layer.moved(layer.cx, layer.cy, newScale, newRot)
                                 }
                             }
+                            GestureMode.WIDTH, GestureMode.HEIGHT -> {
+                                val start = target
+                                val pos = event.changes.firstOrNull { it.pressed }?.position
+                                if (start != null && pos != null) {
+                                    current = resizeEdge(start, mode == GestureMode.WIDTH, toOut(pos) - center0, out, assets)
+                                }
+                            }
                             GestureMode.MOVE, GestureMode.NONE -> {
                                 // NONE: two fingers anywhere adjust the selected layer
                                 if (mode == GestureMode.MOVE || pressed >= 2) {
@@ -222,7 +235,7 @@ fun OutputView(
                             if (wasSelected && t is TextLayer) editText(t)
                         }
                         GestureMode.NONE -> select(null)
-                        GestureMode.HANDLE -> Unit
+                        GestureMode.HANDLE, GestureMode.WIDTH, GestureMode.HEIGHT -> Unit
                     }
                 }
                 end()
@@ -270,6 +283,39 @@ fun OutputView(
                         drawLine(Color.White, Offset(-x, -x), Offset(x, x), 2.dp.toPx())
                         drawLine(Color.White, Offset(-x, x), Offset(x, -x), 2.dp.toPx())
                     }
+                    // stretch width (right edge) / height (bottom edge)
+                    val pillLong = handleR * 1.5f
+                    val pillShort = handleR * 0.7f
+                    if (canStretchWidth(sel)) {
+                        drawRoundRect(
+                            Color.White,
+                            topLeft = Offset(w / 2f - pillShort / 2f, -pillLong / 2f),
+                            size = Size(pillShort, pillLong),
+                            cornerRadius = CornerRadius(pillShort / 2f),
+                        )
+                        drawRoundRect(
+                            Color(0xFF424242),
+                            topLeft = Offset(w / 2f - pillShort / 2f, -pillLong / 2f),
+                            size = Size(pillShort, pillLong),
+                            cornerRadius = CornerRadius(pillShort / 2f),
+                            style = Stroke(1.dp.toPx()),
+                        )
+                    }
+                    if (canStretchHeight(sel)) {
+                        drawRoundRect(
+                            Color.White,
+                            topLeft = Offset(-pillLong / 2f, h / 2f - pillShort / 2f),
+                            size = Size(pillLong, pillShort),
+                            cornerRadius = CornerRadius(pillShort / 2f),
+                        )
+                        drawRoundRect(
+                            Color(0xFF424242),
+                            topLeft = Offset(-pillLong / 2f, h / 2f - pillShort / 2f),
+                            size = Size(pillLong, pillShort),
+                            cornerRadius = CornerRadius(pillShort / 2f),
+                            style = Stroke(1.dp.toPx()),
+                        )
+                    }
                     // resize / rotate (bottom-right)
                     drawCircle(Color.White, handleR, Offset(w / 2f, h / 2f))
                     drawCircle(Color(0xFF424242), handleR * 0.35f, Offset(w / 2f, h / 2f))
@@ -279,7 +325,50 @@ fun OutputView(
     }
 }
 
-private enum class GestureMode { NONE, MOVE, HANDLE, DELETE }
+private enum class GestureMode { NONE, MOVE, HANDLE, DELETE, WIDTH, HEIGHT }
+
+/** Stickers and shapes can be made wider or narrower on their own. */
+private fun canStretchWidth(layer: Layer) = layer is StickerLayer || layer is ShapeLayer
+
+/** ...and taller or shorter (not lines and arrows: their height comes from the thickness). */
+private fun canStretchHeight(layer: Layer) =
+    layer is StickerLayer || (layer is ShapeLayer && !layer.kind.isStroke)
+
+/**
+ * Drags the right edge ([width]) or bottom edge of [layer] to the finger at [fromCenter]
+ * (output pixels, relative to the layer's center when the drag started). The opposite edge stays put.
+ */
+private fun resizeEdge(layer: Layer, width: Boolean, fromCenter: Offset, out: FSize, assets: LayerAssets): Layer {
+    val s0 = EditRenderer.layerSize(layer, out, assets)
+    val rad = Math.toRadians(layer.rotation.toDouble())
+    val c = cos(rad).toFloat()
+    val s = sin(rad).toFloat()
+    // Finger position along the layer's own axes
+    val lx = fromCenter.x * c + fromCenter.y * s
+    val ly = -fromCenter.x * s + fromCenter.y * c
+    val minPx = out.shortSide * 0.02f
+    val newW = if (width) max(minPx, lx + s0.width / 2f) else s0.width
+    val newH = if (!width) max(minPx, ly + s0.height / 2f) else s0.height
+    val shift = if (width) (newW - s0.width) / 2f else (newH - s0.height) / 2f
+    val dx = if (width) c * shift else -s * shift
+    val dy = if (width) s * shift else c * shift
+    val cx = layer.cx + dx / out.width
+    val cy = layer.cy + dy / out.height
+    val scale = (newW / out.shortSide).coerceIn(0.02f, 8f)
+    return when (layer) {
+        is ShapeLayer -> if (layer.kind.isStroke) {
+            layer.copy(scale = scale, cx = cx, cy = cy)
+        } else {
+            layer.copy(scale = scale, aspect = (newW / newH).coerceIn(0.1f, 10f), cx = cx, cy = cy)
+        }
+        is StickerLayer -> {
+            val bmp = assets.bitmap(layer.uri)
+            val natural = if (bmp != null && bmp.height > 0) bmp.width.toFloat() / bmp.height else 1f
+            layer.copy(scale = scale, stretch = (newW / newH / natural).coerceIn(0.1f, 10f), cx = cx, cy = cy)
+        }
+        else -> layer
+    }
+}
 
 /** A corner of a layer's box (sx, sy = ±1) in output pixels. */
 private fun handlePoint(layer: Layer, out: FSize, size: FSize, sx: Float, sy: Float): Offset {

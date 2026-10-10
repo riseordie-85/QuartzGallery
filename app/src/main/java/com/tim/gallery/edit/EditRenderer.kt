@@ -234,7 +234,7 @@ object EditRenderer {
             val w = layer.scale * out.shortSide
             val bmp = assets.bitmap(layer.uri)
             val aspect = if (bmp != null && bmp.height > 0) bmp.width.toFloat() / bmp.height else 1f
-            FSize(w, w / aspect)
+            FSize(w, w / (aspect * layer.stretch.coerceIn(0.1f, 10f)))
         }
         is TextLayer -> buildText(layer, out.shortSide, assets.typeface(layer.fontKey)).let { FSize(it.width, it.height) }
         is ShapeLayer -> shapeSize(layer, out)
