@@ -106,7 +106,8 @@ import java.io.File
 const val PERSONAL_WARNING =
     "Photos and videos in your personal folder are encrypted and stored only inside Quartz Gallery on this phone. " +
         "They are not backed up anywhere and CAN'T BE RECOVERED if you forget your passcode, if too many wrong " +
-        "passcodes are entered, if Quartz Gallery is uninstalled or its data is cleared, or if this phone is reset or lost."
+        "passcodes are entered, if Quartz Gallery is uninstalled or its data is cleared, or if this phone is reset or lost — " +
+        "unless you've made a backup file (⋮ → Back up to a file) inside the folder."
 
 /**
  * The personal folder: first-time setup, the lock screen, and (once unlocked) its contents.
@@ -132,7 +133,9 @@ fun PersonalScreen(onBack: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) Vault.lock()
+            // Don't lock behind a file picker we opened for a backup
+            if (event == Lifecycle.Event.ON_STOP && !VaultPicker.open) Vault.lock()
+            if (event == Lifecycle.Event.ON_RESUME) VaultPicker.open = false
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -499,6 +502,8 @@ private fun VaultBrowser(onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf<List<VaultItem>?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
 
     BackHandler(enabled = selected.isNotEmpty() && viewing == null) { selected = emptySet() }
 
@@ -538,6 +543,21 @@ private fun VaultBrowser(onBack: () -> Unit) {
                         Box {
                             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Back up to a file…") },
+                                    enabled = items.isNotEmpty(),
+                                    onClick = {
+                                        menuOpen = false
+                                        exporting = true
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Restore from a backup…") },
+                                    onClick = {
+                                        menuOpen = false
+                                        importing = true
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Passcode & unlock options") },
                                     onClick = {
@@ -698,6 +718,17 @@ private fun VaultBrowser(onBack: () -> Unit) {
 
     if (settingsOpen) {
         VaultSettingsSheet(onDismiss = { settingsOpen = false })
+    }
+
+    if (exporting || importing) {
+        BackupFlows(
+            exportRequested = exporting,
+            importRequested = importing,
+            onDone = {
+                exporting = false
+                importing = false
+            },
+        )
     }
 }
 

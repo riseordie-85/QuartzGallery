@@ -142,9 +142,18 @@ object VaultCrypto {
         return count
     }
 
-    /** Decrypts a file made by [encrypt]. Throws if it was changed or cut off. */
-    fun decrypt(input: InputStream, output: OutputStream, key: SecretKey, onBytes: (Long) -> Unit = {}) {
-        val inp = DataInputStream(BufferedInputStream(input, 64 * 1024))
+    /**
+     * Decrypts a file made by [encrypt]. Throws if it was changed or cut off.
+     * [buffered] = false reads exactly the stream's bytes (for several streams back to back).
+     */
+    fun decrypt(
+        input: InputStream,
+        output: OutputStream,
+        key: SecretKey,
+        buffered: Boolean = true,
+        onBytes: (Long) -> Unit = {},
+    ) {
+        val inp = DataInputStream(if (buffered) BufferedInputStream(input, 64 * 1024) else input)
         if (inp.readInt() != MAGIC) throw IOException("Not a personal folder file")
         val chunk = inp.readInt()
         var index = 0
@@ -168,6 +177,59 @@ object VaultCrypto {
         }
         output.flush()
     }
+
+    /**
+     * Re-encrypts a stream from one key to another, a chunk at a time (nothing is ever written
+     * out unencrypted). Reads exactly one stream from [input]. Returns the plain size.
+     */
+    fun transcode(input: InputStream, output: OutputStream, from: SecretKey, to: SecretKey, onBytes: (Long) -> Unit = {}): Long {
+        val inp = DataInputStream(input)
+        val out = DataOutputStream(output)
+        if (inp.readInt() != MAGIC) throw IOException("Not an encrypted stream")
+        val chunk = inp.readInt()
+        out.writeInt(MAGIC)
+        out.writeInt(chunk)
+        var index = 0
+        var total = 0L
+        val iv = ByteArray(IV_BYTES)
+        while (true) {
+            val len = inp.readInt()
+            if (len == 0) break
+            if (len < 16 || len > chunk + 16) throw IOException("Damaged file")
+            inp.readFully(iv)
+            val ct = ByteArray(len)
+            inp.readFully(ct)
+            val aad = ByteBuffer.allocate(4).putInt(index).array()
+            val d = Cipher.getInstance("AES/GCM/NoPadding")
+            d.init(Cipher.DECRYPT_MODE, from, GCMParameterSpec(TAG_BITS, iv))
+            d.updateAAD(aad)
+            val plain = d.doFinal(ct)
+            val newIv = ByteArray(IV_BYTES).also { random.nextBytes(it) }
+            val e = Cipher.getInstance("AES/GCM/NoPadding")
+            e.init(Cipher.ENCRYPT_MODE, to, GCMParameterSpec(TAG_BITS, newIv))
+            e.updateAAD(aad)
+            val enc = e.doFinal(plain)
+            out.writeInt(enc.size)
+            out.write(newIv)
+            out.write(enc)
+            index++
+            total += plain.size
+            onBytes(total)
+        }
+        out.writeInt(0)
+        out.flush()
+        return total
+    }
+
+    /** A key from a password (for backup files). Slow on purpose, to make guessing expensive. */
+    fun passwordKey(password: String, salt: ByteArray, iterations: Int): SecretKey {
+        val raw = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(javax.crypto.spec.PBEKeySpec(password.toCharArray(), salt, iterations, 256))
+            .encoded
+        return SecretKeySpec(raw, "AES")
+    }
+
+    fun randomBytes(n: Int): ByteArray = ByteArray(n).also { random.nextBytes(it) }
 
     private fun readFully(input: InputStream, buf: ByteArray): Int {
         var off = 0

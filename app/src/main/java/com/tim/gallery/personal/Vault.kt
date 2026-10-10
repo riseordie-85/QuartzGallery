@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -416,6 +417,98 @@ object Vault {
             withContext(Dispatchers.Main) { onDone(n) }
         }
     }
+
+    // ------------------------------------------------------------ backup files
+
+    private const val BACKUP_MAGIC = 0x5147424B // "QGBK"
+    private const val BACKUP_ROUNDS = 310_000
+    private val CHECK = "QUARTZ-GALLERY-BACKUP".toByteArray()
+
+    /**
+     * Writes everything in the folder to [output] as one file encrypted with [password]
+     * (separate from the passcode). Items are re-encrypted chunk by chunk, never written out
+     * in the clear. Returns how many items were saved.
+     */
+    suspend fun exportBackup(output: java.io.OutputStream, password: String, onProgress: (Int, Int) -> Unit): Int =
+        withContext(Dispatchers.IO) {
+            val vaultKey = VaultCrypto.key(app)
+            val items = scanItems()
+            val salt = VaultCrypto.randomBytes(16)
+            val backupKey = VaultCrypto.passwordKey(password, salt, BACKUP_ROUNDS)
+            val out = java.io.DataOutputStream(java.io.BufferedOutputStream(output, 256 * 1024))
+            out.writeInt(BACKUP_MAGIC)
+            out.writeInt(1)
+            out.write(salt)
+            out.writeInt(BACKUP_ROUNDS)
+            VaultCrypto.encrypt(ByteArrayInputStream(CHECK), out, backupKey)
+            out.writeInt(items.size)
+            items.forEachIndexed { i, item ->
+                VaultCrypto.encrypt(ByteArrayInputStream(toJson(item).toString().toByteArray()), out, backupKey)
+                dataFile(item.id).inputStream().buffered(256 * 1024).use { VaultCrypto.transcode(it, out, vaultKey, backupKey) }
+                val thumb = thumbFile(item.id)
+                out.writeBoolean(thumb.exists())
+                if (thumb.exists()) thumb.inputStream().buffered().use { VaultCrypto.transcode(it, out, vaultKey, backupKey) }
+                onProgress(i + 1, items.size)
+            }
+            out.flush()
+            items.size
+        }
+
+    class WrongPasswordException : Exception("That password doesn't open this backup")
+
+    /** Adds everything from a backup file into the folder. Returns how many items were added. */
+    suspend fun importBackup(input: java.io.InputStream, password: String, onProgress: (Int, Int) -> Unit): Int =
+        withContext(Dispatchers.IO) {
+            ensureKey()
+            val vaultKey = VaultCrypto.key(app)
+            val inp = java.io.DataInputStream(java.io.BufferedInputStream(input, 256 * 1024))
+            if (inp.readInt() != BACKUP_MAGIC) throw IOException("This isn't a Quartz Gallery backup file")
+            inp.readInt() // version
+            val salt = ByteArray(16).also { inp.readFully(it) }
+            val rounds = inp.readInt()
+            if (rounds !in 10_000..5_000_000) throw IOException("This backup file is damaged")
+            val backupKey = VaultCrypto.passwordKey(password, salt, rounds)
+            val check = ByteArrayOutputStream()
+            try {
+                VaultCrypto.decrypt(inp, check, backupKey, buffered = false)
+            } catch (e: Exception) {
+                throw WrongPasswordException()
+            }
+            if (!check.toByteArray().contentEquals(CHECK)) throw WrongPasswordException()
+            val count = inp.readInt()
+            var added = 0
+            for (i in 0 until count) {
+                ensureActive()
+                val metaBytes = ByteArrayOutputStream()
+                VaultCrypto.decrypt(inp, metaBytes, backupKey, buffered = false)
+                val meta = fromJson(JSONObject(metaBytes.toString(Charsets.UTF_8.name())))
+                val id = UUID.randomUUID().toString()
+                writeLock.withLock {
+                    try {
+                        val part = File(dir(), "$id.qv.part")
+                        FileOutputStream(part).use { out ->
+                            VaultCrypto.transcode(inp, out, backupKey, vaultKey)
+                            out.fd.sync()
+                        }
+                        if (!part.renameTo(dataFile(id))) throw IOException("Can't store ${meta.name}")
+                        if (inp.readBoolean()) {
+                            val tpart = File(dir(), "$id.qt.part")
+                            FileOutputStream(tpart).use { out -> VaultCrypto.transcode(inp, out, backupKey, vaultKey) }
+                            tpart.renameTo(thumbFile(id))
+                        }
+                        val entry = meta.copy(id = id, addedMillis = System.currentTimeMillis() + i)
+                        writeEncryptedSynced(metaFile(id), ByteArrayInputStream(toJson(entry).toString().toByteArray()), vaultKey)
+                        added++
+                    } catch (e: Exception) {
+                        removeFiles(id)
+                        throw e
+                    }
+                }
+                onProgress(i + 1, count)
+            }
+            refreshList()
+            added
+        }
 
     private fun insertIntoGallery(v: VaultItem, relativePath: String, key: javax.crypto.SecretKey): Boolean {
         val resolver = app.contentResolver
