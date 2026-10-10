@@ -158,6 +158,15 @@ private fun GalleryRoot() {
                     )
                 }
             }
+            composable("cleanup") {
+                MainBackground {
+                    com.tim.gallery.cleanup.CleanupScreen(
+                        vm = vm,
+                        onBack = { nav.popBackStack() },
+                        onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(AlbumOps.ALL_KEY)}") },
+                    )
+                }
+            }
             composable("personal") {
                 PersonalScreen(onBack = { nav.popBackStack() })
             }
