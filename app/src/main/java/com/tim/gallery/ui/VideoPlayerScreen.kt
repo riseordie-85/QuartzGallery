@@ -90,7 +90,13 @@ import kotlin.math.roundToLong
 
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
-fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
+fun VideoPlayerScreen(
+    uri: Uri,
+    title: String,
+    onBack: () -> Unit,
+    /** Off for personal-folder videos, so stills don't end up in the public gallery. */
+    allowCapture: Boolean = true,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -391,10 +397,12 @@ fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.weight(1f),
                         )
-                        FilledTonalButton(onClick = { captureStill() }, enabled = !capturing) {
-                            Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Capture still")
+                        if (allowCapture) {
+                            FilledTonalButton(onClick = { captureStill() }, enabled = !capturing) {
+                                Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Capture still")
+                            }
                         }
                     }
                 }

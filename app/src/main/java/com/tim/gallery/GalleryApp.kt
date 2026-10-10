@@ -9,6 +9,7 @@ import com.tim.gallery.edit.ColorRecents
 import com.tim.gallery.edit.Fonts
 import com.tim.gallery.edit.WatermarkStore
 import com.tim.gallery.settings.AppSettings
+import com.tim.gallery.personal.Vault
 
 class GalleryApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
@@ -17,6 +18,7 @@ class GalleryApp : Application(), ImageLoaderFactory {
         ColorRecents.init(this)
         WatermarkStore.init(this)
         Fonts.refreshImported(this)
+        Vault.init(this)
     }
 
     override fun newImageLoader(): ImageLoader =

@@ -39,6 +39,7 @@ import com.tim.gallery.edit.EditorScreen
 import com.tim.gallery.ui.GalleryTheme
 import com.tim.gallery.ui.MainBackground
 import com.tim.gallery.ui.SettingsScreen
+import com.tim.gallery.personal.PersonalScreen
 import com.tim.gallery.ui.TrashScreen
 import com.tim.gallery.ui.MainTab
 import com.tim.gallery.ui.MainTabsBar
@@ -102,6 +103,7 @@ private fun GalleryRoot() {
                         onRequestAccess = requestAccess,
                         onOpen = { id -> nav.navigate("viewer/$id") },
                         onOpenSettings = { nav.navigate("settings") },
+                        onOpenPersonal = { nav.navigate("personal") },
                         bottomBar = { MainTabsBar(MainTab.PHOTOS) { nav.switchTab(it) } },
                     )
                 }
@@ -112,6 +114,7 @@ private fun GalleryRoot() {
                         vm = vm,
                         onOpenAlbum = { key -> nav.navigate("album/${encodeKey(key)}") },
                         onOpenTrash = { nav.navigate("trash") },
+                        onOpenPersonal = { nav.navigate("personal") },
                         onOpenSettings = { nav.navigate("settings") },
                         bottomBar = { MainTabsBar(MainTab.ALBUMS) { nav.switchTab(it) } },
                     )
@@ -128,8 +131,11 @@ private fun GalleryRoot() {
             }
             composable("settings") {
                 MainBackground {
-                    SettingsScreen(onBack = { nav.popBackStack() })
+                    SettingsScreen(onBack = { nav.popBackStack() }, onOpenPersonal = { nav.navigate("personal") })
                 }
+            }
+            composable("personal") {
+                PersonalScreen(onBack = { nav.popBackStack() })
             }
             composable("album/{key}") { entry ->
                 val key = decodeKey(entry.arguments?.getString("key").orEmpty())
@@ -144,6 +150,7 @@ private fun GalleryRoot() {
                             nav.popBackStack()
                             nav.navigate("album/${encodeKey(newKey)}")
                         },
+                        onOpenPersonal = { nav.navigate("personal") },
                     )
                 }
             }
@@ -172,6 +179,7 @@ private fun GalleryRoot() {
                     onBack = { nav.popBackStack() },
                     onPlay = { id -> nav.navigate("player/$id") },
                     onEdit = { id -> nav.navigate("editor/$id") },
+                    onOpenPersonal = { nav.navigate("personal") },
                 )
             }
             composable(

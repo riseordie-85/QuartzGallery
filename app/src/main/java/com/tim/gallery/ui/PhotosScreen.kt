@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.tim.gallery.edit.BatchWatermarkDialog
+import com.tim.gallery.personal.MoveToPersonalDialog
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
@@ -78,6 +79,7 @@ fun PhotosScreen(
     onOpen: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     bottomBar: @Composable () -> Unit,
+    onOpenPersonal: () -> Unit,
 ) {
     val items by vm.items.collectAsStateWithLifecycle()
     val type by vm.typeFilter.collectAsStateWithLifecycle()
@@ -87,6 +89,7 @@ fun PhotosScreen(
     var selected by remember { mutableStateOf(emptySet<Long>()) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var watermarking by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var hiding by remember { mutableStateOf<List<GalleryItem>?>(null) }
     val selectedItems = { items.filter { it.id in selected } }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
@@ -130,6 +133,7 @@ fun PhotosScreen(
                     onMove = { moving = selectedItems() },
                     onDelete = { actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() } },
                     onWatermark = { watermarking = selectedItems() },
+                    onPersonal = { hiding = selectedItems() },
                 )
             }
         },
@@ -154,6 +158,22 @@ fun PhotosScreen(
                     type = type,
                     onType = { vm.typeFilter.value = it },
                 )
+            },
+        )
+    }
+
+    hiding?.let { list ->
+        MoveToPersonalDialog(
+            items = list,
+            actions = actions,
+            onDismiss = { hiding = null },
+            onSetUp = {
+                hiding = null
+                onOpenPersonal()
+            },
+            onFinished = { n ->
+                hiding = null
+                if (n > 0) selected = emptySet()
             },
         )
     }

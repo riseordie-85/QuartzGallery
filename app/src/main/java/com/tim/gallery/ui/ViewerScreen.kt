@@ -22,6 +22,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Lock
+import com.tim.gallery.personal.MoveToPersonalDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
@@ -83,6 +85,7 @@ fun ViewerScreen(
     onBack: () -> Unit,
     onPlay: (Long) -> Unit,
     onEdit: (Long) -> Unit,
+    onOpenPersonal: () -> Unit,
 ) {
     SystemBarIcons(darkBackground = true)
     val inTrash = albumKey == AlbumOps.TRASH_KEY
@@ -110,6 +113,7 @@ fun ViewerScreen(
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var wallpaperFor by remember { mutableStateOf<GalleryItem?>(null) }
     var stickerFrom by remember { mutableStateOf<GalleryItem?>(null) }
+    var hiding by remember { mutableStateOf<GalleryItem?>(null) }
     var confirmDeleteForever by remember { mutableStateOf<GalleryItem?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -188,26 +192,36 @@ fun ViewerScreen(
                     IconButton(onClick = { infoFor = current }) {
                         Icon(Icons.Outlined.Info, contentDescription = "Details", tint = Color.White)
                     }
-                    if (!current.isVideo && !inTrash) {
+                    if (!inTrash) {
                         Box {
                             IconButton(onClick = { menuOpen = true }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White)
                             }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                if (!current.isVideo) {
+                                    DropdownMenuItem(
+                                        text = { Text("Set as wallpaper") },
+                                        leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },
+                                        onClick = {
+                                            menuOpen = false
+                                            wallpaperFor = current
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Add to stickers") },
+                                        leadingIcon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
+                                        onClick = {
+                                            menuOpen = false
+                                            stickerFrom = current
+                                        },
+                                    )
+                                }
                                 DropdownMenuItem(
-                                    text = { Text("Set as wallpaper") },
-                                    leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },
+                                    text = { Text("Move to personal folder") },
+                                    leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
                                     onClick = {
                                         menuOpen = false
-                                        wallpaperFor = current
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Add to stickers") },
-                                    leadingIcon = { Icon(Icons.Outlined.EmojiEmotions, contentDescription = null) },
-                                    onClick = {
-                                        menuOpen = false
-                                        stickerFrom = current
+                                        hiding = current
                                     },
                                 )
                             }
@@ -264,6 +278,19 @@ fun ViewerScreen(
     )
 
     infoFor?.let { item -> InfoDialog(item) { infoFor = null } }
+
+    hiding?.let { item ->
+        MoveToPersonalDialog(
+            items = listOf(item),
+            actions = actions,
+            onDismiss = { hiding = null },
+            onSetUp = {
+                hiding = null
+                onOpenPersonal()
+            },
+            onFinished = { hiding = null },
+        )
+    }
 
     stickerFrom?.let { item ->
         StickerMakerDialog(

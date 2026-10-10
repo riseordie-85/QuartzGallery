@@ -53,6 +53,23 @@ Undo/redo at the top; hold the compare button to see the photo without color cha
 date/camera/location info. **⋮ → Overwrite original** replaces the original (JPEG, PNG and WebP).
 Edits are saved at up to 4096 px on the longest side.
 
+## Personal folder
+A passcode-protected folder (Albums tab → **Personal**). Select photos/videos and choose
+**⋮ → Move to personal folder** (also in the viewer's ⋮ menu); they're removed from the gallery
+and kept only inside the app.
+- **6-digit passcode** that's separate from the phone's lock screen. Optionally also unlock with
+  **fingerprint or face** (Android shows whichever the phone has set up — apps can't pick one) and/or
+  the phone's **screen lock** (pattern, PIN or password)
+- You choose how many **wrong passcodes (1–10)** empty the folder. Fingerprint/face/screen-lock
+  attempts don't count
+- Files are encrypted (AES-256-GCM, key protected by the phone's secure hardware) in the app's private
+  storage. Each copy is read back and checked before the original is deleted. The folder locks when
+  you leave it or switch apps, and it can't be screenshotted or previewed in Recents
+- **Move back to gallery** puts items back in their original album; **Delete forever** removes them
+- **Nothing in it can be recovered** if the passcode is forgotten, the wrong-passcode limit is hit,
+  the app is uninstalled or its data cleared, or the phone is reset. It isn't backed up. (Copies
+  that Google Photos already backed up before you moved something aren't affected.)
+
 ## Stickers
 Stickers live in `Pictures/Stickers`, so they survive reinstalls and you can drop images in from a PC.
 They're hidden from the Photos tab and show up as the Stickers album. Add one from a photo
@@ -91,6 +108,8 @@ grants Gallery "Media management" access so it stops asking.
 - `edit/Watermarks.kt` watermark presets, editor and batch watermarking
 - `edit/MarkupSheets.kt`, `edit/LayerLoader.kt` emoji/shape pickers, sticker packs, loading layer pictures
 - `settings/AppSettings.kt`, `ui/SettingsScreen.kt`, `ui/Theme.kt` settings, theme and gradient
+- `personal/` personal folder: `Vault.kt` storage and passcode, `VaultCrypto.kt` encryption,
+  `VaultAuth.kt` fingerprint/face/screen lock, `PersonalScreen.kt` setup, lock screen and contents
 - `edit/EditRenderer.kt` GPU rendering (AGSL color shader, geometry, text/stickers, full-size export)
 - `edit/EditorScreen.kt`, `edit/EditCanvas.kt`, `edit/EditPanels.kt` editor UI
 - `edit/TextEditorDialog.kt`, `edit/Stickers.kt` text editor and sticker picker/maker

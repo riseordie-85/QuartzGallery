@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -49,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.widget.Toast
 import com.tim.gallery.edit.BatchWatermarkDialog
+import com.tim.gallery.personal.MoveToPersonalDialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -69,6 +71,7 @@ fun AlbumsScreen(
     vm: GalleryViewModel,
     onOpenAlbum: (String) -> Unit,
     onOpenTrash: () -> Unit,
+    onOpenPersonal: () -> Unit,
     onOpenSettings: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -131,6 +134,14 @@ fun AlbumsScreen(
             item(key = AlbumOps.TRASH_KEY) {
                 TrashCard(count = trash.size, onClick = onOpenTrash)
             }
+            item(key = "personal") {
+                IconCard(
+                    icon = Icons.Outlined.Lock,
+                    title = "Personal",
+                    subtitle = "Passcode protected",
+                    onClick = onOpenPersonal,
+                )
+            }
         }
     }
 
@@ -168,6 +179,26 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+@Composable
+private fun IconCard(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Column(Modifier.clickable(onClick = onClick)) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val side = maxWidth
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(side)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(side * 0.32f))
+            }
+        }
+        Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -211,6 +242,7 @@ fun AlbumScreen(
     onOpenItem: (Long) -> Unit,
     onAddItems: () -> Unit,
     onRenamed: (String) -> Unit,
+    onOpenPersonal: () -> Unit,
 ) {
     val items by remember(albumKey) { vm.albumItems(albumKey) }.collectAsStateWithLifecycle()
     val albums by vm.albums.collectAsStateWithLifecycle()
@@ -220,6 +252,7 @@ fun AlbumScreen(
     var selected by remember { mutableStateOf(emptySet<Long>()) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var watermarking by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var hiding by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -264,6 +297,7 @@ fun AlbumScreen(
                     onMove = { moving = selectedItems() },
                     onDelete = { actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() } },
                     onWatermark = { watermarking = selectedItems() },
+                    onPersonal = { hiding = selectedItems() },
                 )
             } else {
                 TopAppBar(
@@ -334,6 +368,22 @@ fun AlbumScreen(
                 } else {
                     EmptyAlbum(onAddItems)
                 }
+            },
+        )
+    }
+
+    hiding?.let { list ->
+        MoveToPersonalDialog(
+            items = list,
+            actions = actions,
+            onDismiss = { hiding = null },
+            onSetUp = {
+                hiding = null
+                onOpenPersonal()
+            },
+            onFinished = { n ->
+                hiding = null
+                if (n > 0) selected = emptySet()
             },
         )
     }

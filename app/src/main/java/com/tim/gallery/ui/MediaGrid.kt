@@ -25,6 +25,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.automirrored.outlined.BrandingWatermark
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.CheckCircle
@@ -264,7 +268,9 @@ fun SelectionTopBar(
     onMove: () -> Unit,
     onDelete: () -> Unit,
     onWatermark: (() -> Unit)? = null,
+    onPersonal: (() -> Unit)? = null,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
         colors = mainTopBarColors(),
         navigationIcon = {
@@ -281,12 +287,34 @@ fun SelectionTopBar(
             }
             IconButton(onClick = onShare) { Icon(Icons.Outlined.Share, contentDescription = "Share") }
             IconButton(onClick = onMove) { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = "Move to album") }
-            if (onWatermark != null) {
-                IconButton(onClick = onWatermark) {
-                    Icon(Icons.AutoMirrored.Outlined.BrandingWatermark, contentDescription = "Add watermark")
+            IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete") }
+            if (onWatermark != null || onPersonal != null) {
+                Box {
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (onWatermark != null) {
+                            DropdownMenuItem(
+                                text = { Text("Add watermark") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.BrandingWatermark, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onWatermark()
+                                },
+                            )
+                        }
+                        if (onPersonal != null) {
+                            DropdownMenuItem(
+                                text = { Text("Move to personal folder") },
+                                leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onPersonal()
+                                },
+                            )
+                        }
+                    }
                 }
             }
-            IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete") }
         },
     )
 }

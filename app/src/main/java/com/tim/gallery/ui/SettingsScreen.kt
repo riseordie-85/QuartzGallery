@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.outlined.BrandingWatermark
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.FontDownload
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PermMedia
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.Card
@@ -78,7 +79,7 @@ import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 /** Theme, gradient background, watermarks, fonts and media permissions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val theme by AppSettings.theme.collectAsState()
@@ -280,6 +281,15 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             // ------------------------------------------------ media
             item { SectionTitle("Photos & videos") }
+            item {
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+                    headlineContent = { Text("Personal folder") },
+                    supportingContent = { Text("Passcode, fingerprint/face and wrong-passcode limit are set inside the folder") },
+                    modifier = Modifier.clickable(onClick = onOpenPersonal),
+                )
+            }
             item {
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),

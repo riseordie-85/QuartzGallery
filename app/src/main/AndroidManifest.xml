@@ -10,9 +10,12 @@
     <!-- Optional "Media management" access: move/favorite/delete without a prompt each time -->
     <uses-permission android:name="android.permission.MANAGE_MEDIA" />
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Fingerprint / face unlock for the personal folder -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <application
         android:name=".GalleryApp"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
