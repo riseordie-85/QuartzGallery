@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -210,6 +211,9 @@ object Vault {
         thumbs.evictAll()
         clearTemp()
     }
+
+    /** Runs long work (backups) on a scope that outlives the screen that started it. */
+    fun <T> runInBackground(block: suspend () -> T): kotlinx.coroutines.Deferred<T> = background.async { block() }
 
     fun resetInBackground() {
         background.launch { reset() }
@@ -477,6 +481,7 @@ object Vault {
             if (!check.toByteArray().contentEquals(CHECK)) throw WrongPasswordException()
             val count = inp.readInt()
             var added = 0
+            try {
             for (i in 0 until count) {
                 ensureActive()
                 val metaBytes = ByteArrayOutputStream()
@@ -506,7 +511,9 @@ object Vault {
                 }
                 onProgress(i + 1, count)
             }
-            refreshList()
+            } finally {
+                refreshList()
+            }
             added
         }
 

@@ -26,6 +26,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 enum class TypeFilter(val label: String) { ALL("All"), PHOTOS("Photos"), VIDEOS("Videos") }
 
@@ -109,7 +111,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             everything || if (favorites) item.isFavorite else item.relativePath == key
         }
         combine(all, AppSettings.sort) { list, sort -> list.filter(belongs).sortedFor(sort) }
-            .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, all.value.filter(belongs))
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, all.value.filter(belongs).sortedFor(AppSettings.sort.value))
     }
 
     fun addEmptyAlbum(key: String) = saveEmpty(emptyAlbums.value + key)
@@ -137,21 +140,27 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             if (debounce) delay(400)
-            val fresh = try {
-                repo.loadAllIncremental(all.value)
+            val previous = all.value
+            val snapshot = try {
+                repo.loadAllIncremental(previous)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                emptyList()
+                null // keep showing what we have
             }
-            if (fresh != all.value) all.value = fresh
+            if (snapshot != null) {
+                val changed = withContext(Dispatchers.Default) { snapshot.items != previous }
+                ensureActive()
+                if (changed) all.value = snapshot.items
+                repo.commit(snapshot)
+            }
             _loading.value = false
             val trash = try {
                 repo.loadTrash()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                emptyList()
+                _trash.value
             }
             if (trash != _trash.value) _trash.value = trash
             if (!observing) {

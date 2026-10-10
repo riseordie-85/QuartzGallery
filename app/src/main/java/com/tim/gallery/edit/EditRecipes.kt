@@ -19,6 +19,9 @@ data class EditRecipe(
     val originalId: Long,
     val originalUri: String,
     val state: EditState,
+    /** The original's last-modified time and size when edited (to notice if it changed since). */
+    val originalModified: Long = 0L,
+    val originalSize: Long = 0L,
 )
 
 object EditRecipes {
@@ -34,6 +37,8 @@ object EditRecipes {
                 originalId = o.getLong("originalId"),
                 originalUri = o.getString("originalUri"),
                 state = EditJson.stateFromJson(o.getJSONObject("state")),
+                originalModified = o.optLong("originalModified", 0L),
+                originalSize = o.optLong("originalSize", 0L),
             )
         }.getOrNull()
     }
@@ -44,7 +49,15 @@ object EditRecipes {
                 .put("originalId", recipe.originalId)
                 .put("originalUri", recipe.originalUri)
                 .put("state", EditJson.stateToJson(recipe.state))
-            file(context, copyId).writeText(o.toString())
+                .put("originalModified", recipe.originalModified)
+                .put("originalSize", recipe.originalSize)
+            // Write then swap in, so a crash never leaves a half-written file
+            val tmp = File(dir(context), "$copyId.tmp")
+            tmp.writeText(o.toString())
+            if (!tmp.renameTo(file(context, copyId))) {
+                tmp.copyTo(file(context, copyId), overwrite = true)
+                tmp.delete()
+            }
         }
     }
 

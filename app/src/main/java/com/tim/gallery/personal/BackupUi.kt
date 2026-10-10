@@ -31,6 +31,16 @@ import java.time.LocalDate
 internal object VaultPicker {
     @Volatile
     var open = false
+        set(value) {
+            field = value
+            if (value) openedAt = System.currentTimeMillis()
+        }
+
+    @Volatile
+    var openedAt = 0L
+
+    /** Away longer than this (e.g. left the picker for the home screen): lock anyway. */
+    const val MAX_AWAY_MS = 3 * 60 * 1000L
 }
 
 /**
@@ -55,12 +65,19 @@ fun BackupFlows(exportRequested: Boolean, importRequested: Boolean, onDone: () -
             return@rememberLauncherForActivityResult
         }
         progress = "Backing up…"
-        scope.launch {
-            val result = runCatching {
+        // The work runs outside this screen, so leaving the app doesn't cut it short
+        val work = Vault.runInBackground {
+            runCatching {
                 context.contentResolver.openOutputStream(uri, "w")?.use { out ->
                     Vault.exportBackup(out, pw) { d, t -> progress = "Backing up… $d of $t" }
                 } ?: error("Couldn't write the file")
+            }.onFailure {
+                // Don't leave a half-written backup behind
+                runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
             }
+        }
+        scope.launch {
+            val result = work.await()
             progress = null
             Toast.makeText(
                 context,
@@ -102,12 +119,15 @@ fun BackupFlows(exportRequested: Boolean, importRequested: Boolean, onDone: () -
                 },
                 onOk = { pw ->
                     progress = "Opening backup…"
-                    scope.launch {
-                        val result = runCatching {
+                    val work = Vault.runInBackground {
+                        runCatching {
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 Vault.importBackup(input, pw) { d, t -> progress = "Restoring… $d of $t" }
                             } ?: error("Couldn't open the file")
                         }
+                    }
+                    scope.launch {
+                        val result = work.await()
                         progress = null
                         val e = result.exceptionOrNull()
                         if (e is Vault.WrongPasswordException) {

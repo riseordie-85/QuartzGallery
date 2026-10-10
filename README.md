@@ -2,8 +2,24 @@
 
 A replacement for the stock Android gallery app. Kotlin + Jetpack Compose, **Android 13+**.
 
+**Private by design:** no ads, no accounts, no tracking, no analytics. The app has no internet
+access at all (it's removed from the build). Everything — editing, search, the map and place names,
+duplicate finding — happens on the phone. The only things fetched are background removal's model
+and Google Fonts, and those are downloaded by Google Play services in its own process, not by
+Quartz Gallery.
+
 ## Features
 - **Photos tab**: everything grouped by month, with All / Photos / Videos filters
+  - **Search** by file name, album, month, year or type ("video", "favorite", "screenshot", "gif"...)
+  - **Sort** by date taken, date added, size or name, either direction (albums too)
+  - **Pinch the grid** to make thumbnails bigger or smaller; it remembers your choice
+- **Undo**: moving to an album, to the trash or to the personal folder, and copying, show
+  "… · Undo" at the bottom for a few seconds
+- **Copy to album** (keeps the original where it is) and **Rename** a photo or video
+- **Places**: photos on a built-in world map (coastlines, borders, states/provinces), grouped where
+  they were taken, with place names from a built-in list of 7,000+ towns. Works offline
+- **Free up space**: biggest files, exact duplicates (extra copies pre-selected), look-alike photos
+  (bursts) and screenshots; selected items go to the trash
 - **Albums tab**: Favorites, every folder with photos or videos, Stickers, and Trash
   - Create, rename and delete albums; move photos/videos between albums
   - Albums are real folders, so other apps (and a PC over USB) see the same organization.
@@ -14,11 +30,19 @@ A replacement for the stock Android gallery app. Kotlin + Jetpack Compose, **And
 - **Trash**: see what's in Android's trash and how many days are left, restore items,
   delete them forever, or empty the trash
 - **Favorites**: uses Android's own favorite flag, so other gallery apps see them too
-- **Viewer**: swipe, pinch/double-tap zoom, favorite, share, move, delete, details,
+- **Viewer**: swipe, pinch/double-tap zoom, favorite, share, move, copy, rename, delete,
   set as wallpaper, add to stickers
+  - **Details**: camera, lens, aperture, shutter, ISO, focal length, megapixels, frame rate,
+    bitrate, HDR, size, folder and location (with "Show on map")
+  - **Ultra HDR** photos display in HDR on screens that support it
+  - **Motion Photos** (Pixel and Samsung): tap "Play motion" or press and hold
 - **Video player**: scrub bar using ExoPlayer's scrubbing mode, ±10s, big **−1 / +1 frame** buttons
   under play/pause (hold one to keep stepping), and **Capture still**, which copies the frame on
   screen at the video's full resolution (works for every format, including WebM)
+- **Video tools** (Trim in the viewer): pick a range on the filmstrip, then
+  - **Save clip** — instant, no quality loss (starts at the nearest keyframe), optionally without sound
+  - **Save GIF** — small / medium / large, 10–24 fps, up to 20 seconds
+  - **Save frames** — every frame, every 2nd or 5th, or one per second, as full-resolution photos
 - **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, an optional
   **gradient background** (linear, radial or reflected; start/end colors; direction; presets) for the
   main screens, your watermarks, imported fonts, and media-management access
@@ -49,6 +73,12 @@ Tabs along the bottom:
     photos at once from the selection bar (each gets a watermarked copy; originals aren't changed)
 
 Undo/redo at the top; hold the compare button to see the photo without color changes.
+On tablets and an unfolded Fold in landscape, the tools sit beside the picture.
+
+**Edit again:** saved copies remember how they were made. Tap Edit on an edited copy → **Reopen edit**
+to change its crop, filters, text and stickers later (Save updates that copy).
+**Your looks:** save the current adjustments + filter as a named look (Filters tab) and apply it to
+any photo with one tap.
 **Save copy** puts the edited copy next to the original (same album, same date) and keeps the
 date/camera/location info. **⋮ → Overwrite original** replaces the original (JPEG, PNG and WebP).
 Edits are saved at up to 4096 px on the longest side.
@@ -66,7 +96,9 @@ and kept only inside the app.
   storage. Each copy is read back and checked before the original is deleted. The folder locks when
   you leave it or switch apps, and it can't be screenshotted or previewed in Recents
 - **Move back to gallery** puts items back in their original album; **Delete forever** removes them
-- **Nothing in it can be recovered** if the passcode is forgotten, the wrong-passcode limit is hit,
+- **Back up to a file**: one encrypted file (with its own password, 8+ characters) you can keep on
+  a PC or USB drive, and **Restore from a backup** on any phone
+- **Nothing in it can be recovered without a backup** if the passcode is forgotten, the wrong-passcode limit is hit,
   the app is uninstalled or its data cleared, or the phone is reset. It isn't backed up. (Copies
   that Google Photos already backed up before you moved something aren't affected.)
 
@@ -108,6 +140,12 @@ grants Gallery "Media management" access so it stops asking.
 - `edit/Watermarks.kt` watermark presets, editor and batch watermarking
 - `edit/MarkupSheets.kt`, `edit/LayerLoader.kt` emoji/shape pickers, sticker packs, loading layer pictures
 - `settings/AppSettings.kt`, `ui/SettingsScreen.kt`, `ui/Theme.kt` settings, theme and gradient
+- `data/Search.kt`, `data/Metadata.kt` search/sort and photo details
+- `video/` trim, GIF and frame export
+- `map/` offline world map, place names and location index (`assets/map/` — Natural Earth, public domain)
+- `cleanup/` duplicate and look-alike finder
+- `edit/EditRecipes.kt` "Edit again" and saved looks
+- `ui/MotionHdr.kt` Motion Photos and Ultra HDR
 - `personal/` personal folder: `Vault.kt` storage and passcode, `VaultCrypto.kt` encryption,
   `VaultAuth.kt` fingerprint/face/screen lock, `PersonalScreen.kt` setup, lock screen and contents
 - `edit/EditRenderer.kt` GPU rendering (AGSL color shader, geometry, text/stickers, full-size export)

@@ -287,7 +287,7 @@ fun EditorScreen(
             ).show()
             if (uri != null) {
                 // Remember how it was made, for "Edit again"
-                EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state))
+                EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
                 vm.refresh()
                 onClose()
             }
@@ -313,7 +313,7 @@ fun EditorScreen(
             saving = false
             Toast.makeText(context, if (ok) "Edit updated" else "Couldn't save the photo", Toast.LENGTH_SHORT).show()
             if (ok) {
-                EditRecipes.save(context, target.id, EditRecipe(item.id, item.uri.toString(), history.state))
+                EditRecipes.save(context, target.id, EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
                 vm.refresh()
                 onClose()
             }

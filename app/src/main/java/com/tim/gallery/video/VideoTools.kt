@@ -134,7 +134,6 @@ object VideoTools {
                     continue
                 }
                 if (f.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) maxInput = max(maxInput, f.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
-                extractor.selectTrack(t)
             }
             val info = info(context, item.uri)
             if (info != null && info.rotation != 0) m.setOrientationHint(info.rotation)
@@ -142,7 +141,8 @@ object VideoTools {
                 runCatching {
                     MediaMetadataRetriever().let { r ->
                         try {
-                            r.setDataSource(context, item.uri)
+                            runCatching { r.setDataSource(context, MediaStore.setRequireOriginal(item.uri)) }
+                                .onFailure { r.setDataSource(context, item.uri) }
                             r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION)
                         } finally {
                             r.release()
@@ -154,7 +154,13 @@ object VideoTools {
 
             val startUs = startMs * 1000
             val endUs = endMs * 1000
+            // Find the keyframe at or before the start using the video alone, then line the
+            // sound up with that same moment (so the clip doesn't begin silent)
+            extractor.selectTrack(videoTrack)
             extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            val keyUs = extractor.sampleTime.takeIf { it >= 0 } ?: startUs
+            map.keys.filter { it != videoTrack }.forEach { extractor.selectTrack(it) }
+            extractor.seekTo(keyUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             // Where the cut really starts (the keyframe at or before the chosen start)
             var firstUs = -1L
             val buffer = ByteBuffer.allocate(max(maxInput, 4 shl 20))
@@ -282,6 +288,18 @@ object VideoTools {
                 // Decode in small batches so 4K frames don't run the phone out of memory
                 val perFrameBytes = max(1L, info.width.toLong() * info.height * 4)
                 val batch = (64L * 1024 * 1024 / perFrameBytes).toInt().coerceIn(1, 8)
+                if (step >= 8) {
+                    // Far-apart frames: fetch just the ones needed
+                    var i = first
+                    while (i <= last) {
+                        coroutineContext.ensureActive()
+                        val f = runCatching { r.getFramesAtIndex(i, 1) }.getOrNull()?.firstOrNull() ?: break
+                        onFrame(delivered, (i * 1000f / fps).roundToLong(), scaled(f))
+                        delivered++
+                        i += step
+                    }
+                    if (delivered > 0) return@withContext delivered
+                }
                 var idx = first
                 while (idx <= last) {
                     coroutineContext.ensureActive()
@@ -332,8 +350,11 @@ object VideoTools {
         onProgress: (Float) -> Unit,
     ): Uri = withContext(Dispatchers.IO) {
         val info = info(context, item.uri) ?: throw IOException("Can't read this video")
-        val w = min(widthPx, max(16, info.shownWidth))
-        val h = max(2, (w.toFloat() * info.shownHeight / max(1, info.shownWidth)).roundToInt()) and 1.inv()
+        // Some files don't report their size; fall back to the gallery's numbers, then 16:9
+        val srcW = info.shownWidth.takeIf { it > 0 } ?: item.width.takeIf { it > 0 } ?: 1920
+        val srcH = info.shownHeight.takeIf { it > 0 } ?: item.height.takeIf { it > 0 } ?: 1080
+        val w = min(widthPx, max(16, srcW))
+        val h = max(2, (w.toFloat() * srcH / max(1, srcW)).roundToInt()) and 1.inv()
         val sourceStep = max(1, (info.fps / fps).roundToInt())
         val delayMs = (sourceStep * 1000f / info.fps).roundToInt()
         val expected = max(1, ((endMs - startMs) / 1000f * info.fps / sourceStep).roundToInt())

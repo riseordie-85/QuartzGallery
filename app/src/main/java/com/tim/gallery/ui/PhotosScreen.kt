@@ -96,6 +96,12 @@ fun PhotosScreen(
     val query by vm.query.collectAsStateWithLifecycle()
     var searching by rememberSaveable { mutableStateOf(vm.query.value.isNotEmpty()) }
     val searchFocus = remember { FocusRequester() }
+    // Typed text lives here; the grid filters a moment after typing pauses
+    var searchText by rememberSaveable { mutableStateOf(vm.query.value) }
+    LaunchedEffect(searchText) {
+        if (searchText.isNotEmpty()) kotlinx.coroutines.delay(250)
+        vm.query.value = searchText
+    }
     val actions = rememberMediaActions(vm)
 
     var selected by remember { mutableStateOf(emptySet<Long>()) }
@@ -107,7 +113,7 @@ fun PhotosScreen(
 
     BackHandler(enabled = searching && selected.isEmpty()) {
         searching = false
-        vm.query.value = ""
+        searchText = ""
     }
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
 
@@ -131,13 +137,13 @@ fun PhotosScreen(
                         navigationIcon = {
                             IconButton(onClick = {
                                 searching = false
-                                vm.query.value = ""
+                                searchText = ""
                             }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search") }
                         },
                         title = {
                             TextField(
-                                value = query,
-                                onValueChange = { vm.query.value = it },
+                                value = searchText,
+                                onValueChange = { searchText = it },
                                 placeholder = { Text("Name, album, month, year, video…") },
                                 singleLine = true,
                                 colors = TextFieldDefaults.colors(
@@ -151,8 +157,8 @@ fun PhotosScreen(
                             LaunchedEffect(Unit) { runCatching { searchFocus.requestFocus() } }
                         },
                         actions = {
-                            if (query.isNotEmpty()) {
-                                IconButton(onClick = { vm.query.value = "" }) {
+                            if (searchText.isNotEmpty()) {
+                                IconButton(onClick = { searchText = "" }) {
                                     Icon(Icons.Filled.Close, contentDescription = "Clear")
                                 }
                             }

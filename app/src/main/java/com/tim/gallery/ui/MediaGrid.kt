@@ -103,18 +103,25 @@ private fun buildSections(items: List<GalleryItem>, byAdded: Boolean = false): L
     val zone = ZoneId.systemDefault()
     // Consecutive runs, so any date order (newest or oldest first) keeps its order
     val out = ArrayList<Section>()
+    val used = HashMap<String, Int>()
     var current: YearMonth? = null
     var bucket = ArrayList<GalleryItem>()
+    // Keys stay the same when a new month appears (so the grid doesn't jump)
+    fun add(month: YearMonth) {
+        val base = month.toString()
+        val n = used.merge(base, 1, Int::plus) ?: 1
+        out += Section(if (n == 1) base else "${base}_$n", month.format(fmt), bucket)
+    }
     for (item in items) {
         val month = YearMonth.from(Instant.ofEpochMilli(if (byAdded) item.addedMillis else item.dateMillis).atZone(zone))
         if (month != current) {
-            current?.let { out += Section("${it}_${out.size}", it.format(fmt), bucket) }
+            current?.let { add(it) }
             current = month
             bucket = ArrayList()
         }
         bucket += item
     }
-    current?.let { out += Section("${it}_${out.size}", it.format(fmt), bucket) }
+    current?.let { add(it) }
     return out
 }
 
@@ -171,7 +178,10 @@ fun MediaGrid(
     val byAdded = sort.field == SortField.ADDED
     // Grouping thousands of items by month happens in the background
     val sections by produceState(
-        initialValue = remember { if (grouped) buildSections(items, byAdded) else listOf(Section("all", "", items)) },
+        // Small lists group right away; big ones show ungrouped for a moment instead of stalling the screen
+        initialValue = remember {
+            if (grouped && items.size < 3000) buildSections(items, byAdded) else listOf(Section("all", "", items))
+        },
         items,
         grouped,
         byAdded,

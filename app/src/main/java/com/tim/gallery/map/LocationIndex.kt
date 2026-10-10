@@ -32,6 +32,8 @@ object LocationIndex {
     private var loaded = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+    @Volatile
+    private var again: List<GalleryItem>? = null
 
     /** (done, total) while reading new items; null when up to date. */
     private val _progress = MutableStateFlow<Pair<Int, Int>?>(null)
@@ -47,15 +49,29 @@ object LocationIndex {
 
     /** Reads locations for any items not seen before (in the background). */
     fun update(context: Context, items: List<GalleryItem>) {
-        if (job?.isActive == true) return
+        if (job?.isActive == true) {
+            again = items // run again when this one finishes
+            return
+        }
         job = scope.launch {
             if (!loaded) {
                 load(context)
                 loaded = true
                 _version.value++
             }
+            // If location access was just granted, re-read items that had none
+            val canSeeLocation = context.checkSelfPermission(android.Manifest.permission.ACCESS_MEDIA_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (canSeeLocation && !hadLocationAccess) cache.entries.removeIf { !it.value.hasLocation }
+            hadLocationAccess = canSeeLocation
+            // Forget items that no longer exist (so no coordinates linger for deleted photos)
+            val ids = items.mapTo(HashSet()) { it.id }
+            if (cache.keys.retainAll(ids)) save(context)
             val todo = items.filter { cache[it.id]?.modified != it.modified }
-            if (todo.isEmpty()) return@launch
+            if (todo.isEmpty()) {
+                again?.let { next -> again = null; job = null; update(context, next) }
+                return@launch
+            }
             _progress.value = 0 to todo.size
             var done = 0
             todo.chunked(64).forEach { chunk ->
@@ -76,18 +92,24 @@ object LocationIndex {
                     save(context)
                 }
             }
-            // Forget items that no longer exist
-            val ids = items.mapTo(HashSet()) { it.id }
-            cache.keys.retainAll(ids)
             save(context)
             _progress.value = null
             _version.value++
+            again?.let { next ->
+                again = null
+                job = null
+                update(context, next)
+            }
         }
     }
+
+    @Volatile
+    private var hadLocationAccess = false
 
     private suspend fun load(context: Context) = withContext(Dispatchers.IO) {
         runCatching {
             DataInputStream(file(context).inputStream().buffered()).use { inp ->
+                hadLocationAccess = inp.readBoolean()
                 val n = inp.readInt()
                 repeat(n) {
                     val id = inp.readLong()
@@ -102,6 +124,7 @@ object LocationIndex {
             val tmp = File(file(context).parentFile, "locations.tmp")
             DataOutputStream(tmp.outputStream().buffered()).use { out ->
                 val snapshot = cache.entries.toList()
+                out.writeBoolean(hadLocationAccess)
                 out.writeInt(snapshot.size)
                 snapshot.forEach { (id, s) ->
                     out.writeLong(id)

@@ -138,6 +138,15 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
         }
     }
     LaunchedEffect(mute) { player.volume = if (mute) 0f else 1f }
+    // Pause when the app goes to the background
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) player.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
 
     // Keep playback inside the chosen range (loops)
     val currentStart by rememberUpdatedState(startMs)
@@ -227,7 +236,7 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
             durationMs = durationMs,
             startMs = startMs,
             endMs = end,
-            positionMs = position,
+            positionMs = { position },
             onChange = { s, e, seekTo ->
                 startMs = s
                 endMs = e
@@ -326,7 +335,7 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
             2 to "Every 2nd frame",
             5 to "Every 5th frame",
             max(1, fps.roundToInt()) to "1 per second",
-        )
+        ).distinctBy { it.first }
         var step by remember { mutableIntStateOf(1) }
         val count = max(1, (rangeMs / 1000f * fps / step).roundToInt())
         val tooMany = count > 600
@@ -377,7 +386,8 @@ private fun RangeStrip(
     durationMs: Long,
     startMs: Long,
     endMs: Long,
-    positionMs: Long,
+    /** Read only while drawing, so playback doesn't recompose the whole screen. */
+    positionMs: () -> Long,
     onChange: (start: Long, end: Long, seekTo: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -435,7 +445,7 @@ private fun RangeStrip(
             drawRoundRect(Color(0xFFFFD54F), Offset(l, 0f), Size(r - l, size.height), CornerRadius(8f), style = Stroke(3.dp.toPx()))
             drawRoundRect(Color(0xFFFFD54F), Offset(l - handleW / 2f, 0f), Size(handleW, size.height), CornerRadius(handleW / 2f))
             drawRoundRect(Color(0xFFFFD54F), Offset(r - handleW / 2f, 0f), Size(handleW, size.height), CornerRadius(handleW / 2f))
-            val px = xOf(positionMs)
+            val px = xOf(positionMs())
             drawLine(Color.White, Offset(px, -4f), Offset(px, size.height + 4f), 2.dp.toPx())
         }
     }

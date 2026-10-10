@@ -63,17 +63,26 @@ class MediaActions internal constructor(
             val message = if (moved == toMove.size) "Moved ${itemCount(moved)} to $name"
             else "Moved $moved of ${toMove.size} to $name. Android refused the rest."
             if (undoable && moved > 0) {
-                UndoCenter.post(message) { a ->
-                    // Put each item back in the album it came from
-                    toMove.groupBy { it.relativePath }.forEach { (from, group) ->
-                        a.move(group.map { it.copy(relativePath = target) }, from, undoable = false)
-                    }
-                }
+                UndoCenter.post(message) { a -> a.moveBack(toMove, target) }
             } else {
                 toast(message)
             }
             vm.refresh()
             onFinished(moved)
+        }
+    }
+
+    /** Undo for [move]: one permission request, then each item goes back to the album it came from. */
+    fun moveBack(original: List<GalleryItem>, movedTo: String) {
+        val nowIn = original.map { it.copy(relativePath = movedTo) }
+        withWriteAccess(nowIn) { granted ->
+            if (!granted) return@withWriteAccess
+            var back = 0
+            original.groupBy { it.relativePath }.forEach { (from, group) ->
+                back += AlbumOps.move(context, group.map { it.copy(relativePath = movedTo) }, from)
+            }
+            toast("Moved ${itemCount(back)} back")
+            vm.refresh()
         }
     }
 

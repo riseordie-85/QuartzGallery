@@ -61,9 +61,13 @@ object MotionPhotos {
                     return buf.array().copyOf(buf.position())
                 }
                 fun looksLikeVideo(offset: Long): Boolean {
-                    if (offset < 0 || offset + 8 > size) return false
-                    val b = readAt(offset, 8)
-                    return b.size == 8 && String(b, 4, 4, Charsets.ISO_8859_1) == "ftyp"
+                    // Must be inside the file, after the photo itself, and an MP4/QuickTime "ftyp" box
+                    if (offset < 1024 || offset + 12 > size) return false
+                    val b = readAt(offset, 12)
+                    if (b.size < 12 || String(b, 4, 4, Charsets.ISO_8859_1) != "ftyp") return false
+                    val brand = String(b, 8, 4, Charsets.ISO_8859_1).lowercase()
+                    return brand.startsWith("mp4") || brand.startsWith("iso") || brand.startsWith("qt") ||
+                        brand.startsWith("m4v") || brand.startsWith("3gp") || brand.startsWith("avc")
                 }
                 // XMP lives near the start of the file
                 val head = readAt(0, minOf(size, 256L * 1024).toInt())
@@ -82,7 +86,7 @@ object MotionPhotos {
                 // Samsung photos (reading the end of every file would be slow)
                 val mentionsMotion = text.contains("MotionPhoto") || text.contains("MicroVideo")
                 if (!mentionsMotion && !text.contains("samsung", ignoreCase = true)) return null
-                val tailLen = minOf(size, 16L * 1024 * 1024).toInt()
+                val tailLen = minOf(size, 12L * 1024 * 1024).toInt()
                 val tailStart = size - tailLen
                 val tail = readAt(tailStart, tailLen)
                 val marker = "MotionPhoto_Data".toByteArray()
@@ -113,6 +117,7 @@ object MotionPhotos {
     suspend fun extract(context: Context, item: GalleryItem, offset: Long): File? = withContext(Dispatchers.IO) {
         val out = File(context.cacheDir, "motion_${item.id}_${item.modified}.mp4")
         if (out.exists() && out.length() > 0) return@withContext out
+        val part = File(context.cacheDir, out.name + ".part")
         runCatching {
             context.contentResolver.openInputStream(item.uri)?.use { input ->
                 var skip = offset
@@ -121,13 +126,14 @@ object MotionPhotos {
                     if (s <= 0) break
                     skip -= s
                 }
-                out.outputStream().use { input.copyTo(it) }
-            }
+                part.outputStream().use { input.copyTo(it) }
+            } ?: error("Can't read")
+            if (!part.renameTo(out)) error("Can't store")
             // Keep the cache small: only the most recent few
             context.cacheDir.listFiles { f -> f.name.startsWith("motion_") && f != out }
                 ?.sortedByDescending { it.lastModified() }?.drop(5)?.forEach { it.delete() }
             out
-        }.getOrNull()
+        }.onFailure { part.delete() }.getOrNull()
     }
 }
 
@@ -148,6 +154,10 @@ fun MotionPlayer(file: File, onEnded: () -> Unit, modifier: Modifier = Modifier)
         val l = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) onEnded()
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                onEnded()
             }
         }
         player.addListener(l)

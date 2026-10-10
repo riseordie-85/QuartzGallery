@@ -75,7 +75,59 @@ import kotlin.math.ln
 import kotlin.math.max
 
 /** A group of nearby photos on the map. */
-private class Cluster(val x: Float, val y: Float, val items: List<GalleryItem>)
+private class Cluster(val wx: Float, val wy: Float, val items: List<GalleryItem>)
+
+/** The map, prepared once: land as filled paths, borders and state lines as line segments (Mercator units). */
+private class MapGeometry(val landCoarse: Path, val landFine: Path, val borders: FloatArray, val states: FloatArray)
+
+private fun buildGeometry(l: WorldData.Layers): MapGeometry {
+    fun path(lines: List<MapLine>): Path {
+        val p = Path()
+        for (line in lines) {
+            val pts = line.pts
+            p.moveTo(pts[0], pts[1])
+            var i = 2
+            while (i < pts.size) {
+                p.lineTo(pts[i], pts[i + 1])
+                i += 2
+            }
+            p.close()
+        }
+        return p
+    }
+    fun segments(lines: List<MapLine>): FloatArray {
+        val n = lines.sumOf { maxOf(0, it.pts.size / 2 - 1) }
+        val out = FloatArray(n * 4)
+        var k = 0
+        for (line in lines) {
+            val pts = line.pts
+            var i = 0
+            while (i + 3 < pts.size) {
+                out[k++] = pts[i]; out[k++] = pts[i + 1]; out[k++] = pts[i + 2]; out[k++] = pts[i + 3]
+                i += 2
+            }
+        }
+        return out
+    }
+    return MapGeometry(path(l.landCoarse), path(l.landFine), segments(l.borders), segments(l.states))
+}
+
+/** Groups photos on a grid fixed to the map, so groups don't reshuffle while you pan. */
+private fun clusterAt(located: List<Pair<GalleryItem, Offset>>, cellWorld: Float): List<Cluster> {
+    val groups = HashMap<Long, MutableList<Pair<GalleryItem, Offset>>>()
+    for (entry in located) {
+        val gx = floor(entry.second.x / cellWorld).toLong()
+        val gy = floor(entry.second.y / cellWorld).toLong()
+        groups.getOrPut((gx shl 32) or (gy and 0xFFFFFFFFL)) { mutableListOf() } += entry
+    }
+    return groups.values.map { list ->
+        Cluster(
+            list.sumOf { it.second.x.toDouble() }.toFloat() / list.size,
+            list.sumOf { it.second.y.toDouble() }.toFloat() / list.size,
+            list.map { it.first },
+        )
+    }
+}
 
 /**
  * Photos on a world map. The map (coastlines, borders, states) and place names are built into
@@ -95,7 +147,9 @@ fun MapScreen(
     val all by vm.allItems.collectAsStateWithLifecycle()
     val progress by LocationIndex.progress.collectAsState()
     val version by LocationIndex.version.collectAsState()
-    val layers by produceState<WorldData.Layers?>(null) { value = WorldData.layers(context) }
+    val geometry by produceState<MapGeometry?>(null) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { buildGeometry(WorldData.layers(context)) }
+    }
 
     LaunchedEffect(all) { if (all.isNotEmpty()) LocationIndex.update(context, all) }
 
@@ -118,7 +172,6 @@ fun MapScreen(
 
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val ocean = if (dark) 0xFF0E1822.toInt() else 0xFFCFE2F0.toInt()
-    val land = if (dark) 0xFF26313C.toInt() else 0xFFF3F0EA.toInt()
     val borderColor = if (dark) 0xFF5B6B7A.toInt() else 0xFF9AA5AF.toInt()
     val stateColor = if (dark) 0xFF3B4855.toInt() else 0xFFC7CDD3.toInt()
     val accent = MaterialTheme.colorScheme.primary.toArgb()
@@ -165,20 +218,31 @@ fun MapScreen(
 
             fun toScreen(p: Offset) = Offset((p.x - centerX) * scale + w / 2f, (p.y - centerY) * scale + h / 2f)
 
-            fun clusters(): List<Cluster> {
-                val groups = HashMap<Long, MutableList<Pair<GalleryItem, Offset>>>()
-                for (entry in located) {
-                    val s = toScreen(entry.second)
-                    if (s.x < -cell || s.y < -cell || s.x > w + cell || s.y > h + cell) continue
-                    val key = (floor(s.x / cell).toLong() shl 32) or (floor(s.y / cell).toLong() and 0xFFFFFFFFL)
-                    groups.getOrPut(key) { mutableListOf() } += entry.first to s
-                }
-                return groups.values.map { list ->
-                    Cluster(
-                        list.sumOf { it.second.x.toDouble() }.toFloat() / list.size,
-                        list.sumOf { it.second.y.toDouble() }.toFloat() / list.size,
-                        list.map { it.first },
-                    )
+            // Zoom steps (each 1.5×) decide the grouping grid, computed in the background
+            val zoomStep = if (scale > 0f) floor(ln(scale / minScale) / ln(1.5f)).toInt().coerceAtLeast(0) else 0
+            val clusterList by produceState(emptyList<Cluster>(), located, zoomStep, minScale) {
+                val cellWorld = cell / (minScale * Math.pow(1.5, zoomStep.toDouble()).toFloat())
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { clusterAt(located, cellWorld) }
+            }
+            fun radiusOf(cl: Cluster) = with(density) { (12f + 5f * ln(cl.items.size.toFloat())).dp.toPx() }
+            val paints = remember(dark, accent) {
+                object {
+                    val land = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = landColor(dark); it.style = Paint.Style.FILL }
+                    val border = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = borderColor; it.style = Paint.Style.STROKE }
+                    val state = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = stateColor; it.style = Paint.Style.STROKE }
+                    val dot = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = accent }
+                    val ring = Paint(Paint.ANTI_ALIAS_FLAG).also {
+                        it.color = onAccent
+                        it.style = Paint.Style.STROKE
+                        it.strokeWidth = with(density) { 2.dp.toPx() }
+                    }
+                    val text = Paint(Paint.ANTI_ALIAS_FLAG).also {
+                        it.color = onAccent
+                        it.textAlign = Paint.Align.CENTER
+                        it.typeface = Typeface.DEFAULT_BOLD
+                        it.textSize = with(density) { 12.dp.toPx() }
+                    }
+                    val pin = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = 0xFFE53935.toInt() }
                 }
             }
 
@@ -197,7 +261,7 @@ fun MapScreen(
                             clampView()
                         }
                     }
-                    .pointerInput(w, h, located) {
+                    .pointerInput(w, h, clusterList) {
                         detectTapGestures(
                             onDoubleTap = { p ->
                                 val world = Offset((p.x - w / 2f) / scale + centerX, (p.y - h / 2f) / scale + centerY)
@@ -207,10 +271,11 @@ fun MapScreen(
                                 clampView()
                             },
                             onTap = { p ->
-                                val hit = clusters().minByOrNull { (it.x - p.x) * (it.x - p.x) + (it.y - p.y) * (it.y - p.y) }
-                                if (hit != null && (hit.x - p.x) * (hit.x - p.x) + (hit.y - p.y) * (hit.y - p.y) < cell * cell) {
-                                    selected = hit
-                                }
+                                val hit = clusterList
+                                    .map { it to toScreen(Offset(it.wx, it.wy)) }
+                                    .filter { (cl, sp) -> (sp - p).getDistance() <= radiusOf(cl) + with(density) { 6.dp.toPx() } }
+                                    .minByOrNull { (_, sp) -> (sp - p).getDistance() }
+                                if (hit != null) selected = hit.first
                             },
                         )
                     }
@@ -219,73 +284,38 @@ fun MapScreen(
                     val nc = c.nativeCanvas
                     nc.drawColor(ocean)
                     if (scale <= 0f) return@drawIntoCanvas
-                    val l = layers ?: return@drawIntoCanvas
-                    val viewMinX = centerX - w / 2f / scale
-                    val viewMaxX = centerX + w / 2f / scale
-                    val viewMinY = centerY - h / 2f / scale
-                    val viewMaxY = centerY + h / 2f / scale
-                    fun pathOf(lines: List<MapLine>, close: Boolean): Path {
-                        val path = Path()
-                        for (line in lines) {
-                            if (line.maxX < viewMinX || line.minX > viewMaxX || line.maxY < viewMinY || line.minY > viewMaxY) continue
-                            val pts = line.pts
-                            path.moveTo((pts[0] - centerX) * scale + w / 2f, (pts[1] - centerY) * scale + h / 2f)
-                            var i = 2
-                            while (i < pts.size) {
-                                path.lineTo((pts[i] - centerX) * scale + w / 2f, (pts[i + 1] - centerY) * scale + h / 2f)
-                                i += 2
-                            }
-                            if (close) path.close()
-                        }
-                        return path
-                    }
-                    val zoomed = scale > minScale * 5f
-                    val landPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = land; it.style = Paint.Style.FILL }
-                    nc.drawPath(pathOf(if (zoomed) l.landFine else l.landCoarse, true), landPaint)
+                    val g = geometry ?: return@drawIntoCanvas
+                    // The map is drawn in Mercator units through one transform (no per-frame rebuilding)
+                    nc.save()
+                    nc.translate(w / 2f - centerX * scale, h / 2f - centerY * scale)
+                    nc.scale(scale, scale)
+                    nc.drawPath(if (scale > minScale * 5f) g.landFine else g.landCoarse, paints.land)
                     if (scale > minScale * 2.5f) {
-                        val p = Paint(Paint.ANTI_ALIAS_FLAG).also {
-                            it.color = borderColor
-                            it.style = Paint.Style.STROKE
-                            it.strokeWidth = with(density) { 1.dp.toPx() }
-                        }
-                        nc.drawPath(pathOf(l.borders, true), p)
+                        paints.border.strokeWidth = with(density) { 1.dp.toPx() } / scale
+                        nc.drawLines(g.borders, paints.border)
                     }
                     if (scale > minScale * 8f) {
-                        val p = Paint(Paint.ANTI_ALIAS_FLAG).also {
-                            it.color = stateColor
-                            it.style = Paint.Style.STROKE
-                            it.strokeWidth = with(density) { 0.75.dp.toPx() }
-                        }
-                        nc.drawPath(pathOf(l.states, false), p)
+                        paints.state.strokeWidth = with(density) { 0.75.dp.toPx() } / scale
+                        nc.drawLines(g.states, paints.state)
                     }
+                    nc.restore()
 
                     // Photo groups
-                    val dot = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = accent }
-                    val ring = Paint(Paint.ANTI_ALIAS_FLAG).also {
-                        it.color = onAccent
-                        it.style = Paint.Style.STROKE
-                        it.strokeWidth = with(density) { 2.dp.toPx() }
-                    }
-                    val text = Paint(Paint.ANTI_ALIAS_FLAG).also {
-                        it.color = onAccent
-                        it.textAlign = Paint.Align.CENTER
-                        it.typeface = Typeface.DEFAULT_BOLD
-                        it.textSize = with(density) { 12.dp.toPx() }
-                    }
-                    for (cl in clusters()) {
-                        val r = with(density) { (12f + 5f * ln(cl.items.size.toFloat())).dp.toPx() }
-                        nc.drawCircle(cl.x, cl.y, r, dot)
-                        nc.drawCircle(cl.x, cl.y, r, ring)
+                    for (cl in clusterList) {
+                        val sp = toScreen(Offset(cl.wx, cl.wy))
+                        val r = radiusOf(cl)
+                        if (sp.x < -r || sp.y < -r || sp.x > w + r || sp.y > h + r) continue
+                        nc.drawCircle(sp.x, sp.y, r, paints.dot)
+                        nc.drawCircle(sp.x, sp.y, r, paints.ring)
                         val label = if (cl.items.size > 999) "${cl.items.size / 1000}k" else cl.items.size.toString()
-                        nc.drawText(label, cl.x, cl.y - (text.descent() + text.ascent()) / 2f, text)
+                        nc.drawText(label, sp.x, sp.y - (paints.text.descent() + paints.text.ascent()) / 2f, paints.text)
                     }
 
                     // The spot from "Show on map"
                     if (focusLat != null && focusLon != null) {
-                        val s = toScreen(Offset(Mercator.x(focusLon), Mercator.y(focusLat)))
-                        val pin = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = 0xFFE53935.toInt() }
-                        nc.drawCircle(s.x, s.y, with(density) { 7.dp.toPx() }, pin)
-                        nc.drawCircle(s.x, s.y, with(density) { 7.dp.toPx() }, ring)
+                        val sp = toScreen(Offset(Mercator.x(focusLon), Mercator.y(focusLat)))
+                        nc.drawCircle(sp.x, sp.y, with(density) { 7.dp.toPx() }, paints.pin)
+                        nc.drawCircle(sp.x, sp.y, with(density) { 7.dp.toPx() }, paints.ring)
                     }
                 }
             }
@@ -380,3 +410,5 @@ fun MapScreen(
         }
     }
 }
+
+private fun landColor(dark: Boolean): Int = if (dark) 0xFF26313C.toInt() else 0xFFF3F0EA.toInt()

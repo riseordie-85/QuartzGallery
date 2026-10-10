@@ -52,6 +52,7 @@ fun ZoomableImage(
     val tap by rememberUpdatedState(onTap)
     val zoomChanged by rememberUpdatedState(onZoomChange)
     val longPress by rememberUpdatedState(onLongPress)
+    val hasLongPress = onLongPress != null
 
     fun clamp(o: Offset, s: Float): Offset {
         val maxX = boxSize.width * (s - 1f) / 2f
@@ -73,10 +74,11 @@ fun ZoomableImage(
             .fillMaxSize()
             .clipToBounds()
             .onSizeChanged { boxSize = it }
-            .pointerInput(Unit) {
+            .pointerInput(hasLongPress) {
                 detectTapGestures(
                     onTap = { tap() },
-                    onLongPress = { longPress?.invoke() },
+                    // Only listen for holds when there's something to do (holding would block swipes)
+                    onLongPress = if (hasLongPress) ({ longPress?.invoke() }) else null,
                     onDoubleTap = { p ->
                         if (scale > 1.01f) {
                             scale = 1f

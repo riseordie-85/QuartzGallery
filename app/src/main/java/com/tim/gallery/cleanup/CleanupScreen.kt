@@ -89,6 +89,8 @@ fun CleanupScreen(vm: GalleryViewModel, onBack: () -> Unit, onOpenItem: (Long) -
     var simGroups by remember { mutableStateOf<List<List<GalleryItem>>?>(null) }
     var scanProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
+    // Each tab has its own selection, so nothing hidden on another tab gets trashed
+    LaunchedEffect(tab) { selected = emptySet() }
     LaunchedEffect(tab, all) {
         if (all.isEmpty()) return@LaunchedEffect
         val ids = all.mapTo(HashSet()) { it.id }
@@ -96,12 +98,12 @@ fun CleanupScreen(vm: GalleryViewModel, onBack: () -> Unit, onOpenItem: (Long) -
         when (tab) {
             CleanTab.DUPLICATES -> {
                 scanProgress = 0 to 0
-                val firstScan = dupGroups == null
+                val firstScanHere = selected.isEmpty()
                 val groups = Cleanup.duplicates(context, all) { d, t -> scanProgress = d to t }
                 dupGroups = groups
                 scanProgress = null
                 // Pre-select the extra copies (the first in each group is kept)
-                if (firstScan) selected = selected + groups.flatMap { g -> g.drop(1).map { it.id } }
+                if (firstScanHere) selected = groups.flatMap { g -> g.drop(1).map { it.id } }.toSet()
             }
             CleanTab.SIMILAR -> {
                 scanProgress = 0 to 0

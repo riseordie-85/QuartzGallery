@@ -135,7 +135,11 @@ fun PersonalScreen(onBack: () -> Unit) {
         val observer = LifecycleEventObserver { _, event ->
             // Don't lock behind a file picker we opened for a backup
             if (event == Lifecycle.Event.ON_STOP && !VaultPicker.open) Vault.lock()
-            if (event == Lifecycle.Event.ON_RESUME) VaultPicker.open = false
+            if (event == Lifecycle.Event.ON_RESUME) {
+                // Gone a long time while "in the file picker"? Lock now to be safe
+                if (VaultPicker.open && System.currentTimeMillis() - VaultPicker.openedAt > VaultPicker.MAX_AWAY_MS) Vault.lock()
+                VaultPicker.open = false
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

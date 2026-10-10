@@ -223,18 +223,31 @@ private fun GalleryRoot() {
             ) { entry ->
                 val copyId = entry.arguments?.getLong("id") ?: 0L
                 val ctx = androidx.compose.ui.platform.LocalContext.current
-                val recipe by androidx.compose.runtime.produceState<com.tim.gallery.edit.EditRecipe?>(null, copyId) {
-                    value = com.tim.gallery.edit.EditRecipes.load(ctx, copyId)
+                // null = still loading; Result holds the recipe (or null if it couldn't be read)
+                val loaded by androidx.compose.runtime.produceState<Result<com.tim.gallery.edit.EditRecipe?>?>(null, copyId) {
+                    value = Result.success(com.tim.gallery.edit.EditRecipes.load(ctx, copyId))
                 }
                 val copy = vm.find(copyId)
-                val r = recipe
+                val state = loaded
+                val r = state?.getOrNull()
                 val original = r?.let { vm.find(it.originalId) }
+                // The original changed since (rotated, edited, replaced): the old edit wouldn't fit it
+                val originalChanged = r != null && original != null && r.originalModified > 0 &&
+                    (original.modified != r.originalModified || (r.originalSize > 0 && original.sizeBytes != r.originalSize))
                 when {
                     copy == null -> LaunchedEffect(Unit) { nav.popBackStack() }
-                    r == null -> Unit // loading
-                    original == null -> {
+                    state == null -> Unit // loading
+                    r == null || original == null || originalChanged -> {
                         LaunchedEffect(Unit) {
-                            android.widget.Toast.makeText(ctx, "The original photo is gone, so this edit can't be reopened. Editing the copy instead.", android.widget.Toast.LENGTH_LONG).show()
+                            android.widget.Toast.makeText(
+                                ctx,
+                                when {
+                                    r == null -> "This edit couldn't be reopened. Editing the copy instead."
+                                    original == null -> "The original photo is gone, so this edit can't be reopened. Editing the copy instead."
+                                    else -> "The original photo has changed since, so this edit can't be reopened. Editing the copy instead."
+                                },
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
                         }
                         EditorScreen(vm = vm, item = copy, onClose = { nav.popBackStack() })
                     }

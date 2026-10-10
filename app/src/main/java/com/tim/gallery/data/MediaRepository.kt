@@ -37,19 +37,36 @@ class MediaRepository(private val context: Context) {
     /** Every photo and video, newest first (trashed items excluded). */
     suspend fun loadAll(): List<GalleryItem> = query(MediaStore.MATCH_EXCLUDE)
 
+    @Volatile
     private var lastVersion: String? = null
+
+    @Volatile
     private var lastGeneration = -1L
+
+    /** A loaded list plus the change counters it reflects (see [commit]). */
+    class Snapshot(val items: List<GalleryItem>, internal val version: String?, internal val generation: Long)
+
+    /** Call once [snapshot]'s items are shown, so the next load only reads newer changes. */
+    fun commit(snapshot: Snapshot) {
+        lastVersion = snapshot.version
+        lastGeneration = snapshot.generation
+    }
 
     /**
      * Like [loadAll], but after the first load only re-reads what changed (MediaStore keeps a
      * change counter per item), which keeps big libraries quick. Falls back to a full load when
      * the phone has several storage volumes or the media index was rebuilt.
      */
-    suspend fun loadAllIncremental(previous: List<GalleryItem>): List<GalleryItem> = withContext(Dispatchers.IO) {
+    suspend fun loadAllIncremental(previous: List<GalleryItem>): Snapshot = withContext(Dispatchers.IO) {
         val volumes = MediaStore.getExternalVolumeNames(context)
         val version = MediaStore.getVersion(context)
         val canDiff = previous.isNotEmpty() && volumes.size == 1 && version == lastVersion && lastGeneration >= 0
-        val generation = runCatching { MediaStore.getGeneration(context, volumes.first()) }.getOrDefault(-1L)
+        // Change counters are per storage volume, so diffing only works with exactly one
+        val generation = if (volumes.size == 1) {
+            runCatching { MediaStore.getGeneration(context, volumes.first()) }.getOrDefault(-1L)
+        } else {
+            -1L
+        }
         val result = if (!canDiff) {
             query(MediaStore.MATCH_EXCLUDE)
         } else {
@@ -64,9 +81,7 @@ class MediaRepository(private val context: Context) {
                 (previous.filter { it.id in ids && it.id !in changedIds } + changed).sortedByDescending { it.dateMillis }
             }
         }
-        lastVersion = version
-        lastGeneration = generation
-        result
+        Snapshot(result, version, generation)
     }
 
     /** Just the ids of every current photo and video (cheap; used to notice deletions). */

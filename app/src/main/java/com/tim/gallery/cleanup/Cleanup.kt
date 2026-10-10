@@ -144,9 +144,12 @@ object Cleanup {
         for (p in need) {
             val h = hashes[p.id]?.second ?: continue
             val prev = last
-            val prevHash = prev?.let { hashes[it.id]?.second }
-            if (prev != null && prevHash != null && p.dateMillis - prev.dateMillis <= window &&
-                java.lang.Long.bitCount(h xor prevHash) <= 8
+            // Compare with the group's first photo (not just the previous one), so a slow pan
+            // doesn't chain into one giant "similar" group
+            val anchor = current.firstOrNull() ?: prev
+            val anchorHash = anchor?.let { hashes[it.id]?.second }
+            if (prev != null && anchorHash != null && p.dateMillis - prev.dateMillis <= window &&
+                java.lang.Long.bitCount(h xor anchorHash) <= 8
             ) {
                 if (current.isEmpty()) current += prev
                 current += p

@@ -54,7 +54,9 @@ object Metadata {
         if (item.isVideo) {
             val r = MediaMetadataRetriever()
             try {
-                r.setDataSource(context, item.uri)
+                // The original (unredacted) file, so the location is included
+                runCatching { r.setDataSource(context, MediaStore.setRequireOriginal(item.uri)) }
+                    .onFailure { r.setDataSource(context, item.uri) }
                 parseIso6709(r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_LOCATION))
             } finally {
                 runCatching { r.release() }
@@ -111,7 +113,8 @@ object Metadata {
     private fun readVideo(context: Context, uri: Uri): MediaDetails {
         val r = MediaMetadataRetriever()
         try {
-            r.setDataSource(context, uri)
+            runCatching { r.setDataSource(context, MediaStore.setRequireOriginal(uri)) }
+                .onFailure { r.setDataSource(context, uri) }
             val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val frames = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toLongOrNull() ?: 0L
             val capture = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()

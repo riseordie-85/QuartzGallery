@@ -308,6 +308,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
             item {
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
                 Text(
+                    "Private by design: no ads, no accounts, no tracking. Quartz Gallery has no internet access — " +
+                        "your photos, edits, map and searches never leave this phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                Text(
                     "Quartz Gallery ${appVersion(context)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

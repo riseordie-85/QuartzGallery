@@ -143,6 +143,17 @@ fun ViewerScreen(
         motionFile = null
     }
 
+    // Stay on the same photo if the list changes order (sorting, renames, items arriving)
+    var currentId by remember { mutableStateOf(startId) }
+    LaunchedEffect(pagerState.currentPage) { items.getOrNull(pagerState.currentPage)?.id?.let { currentId = it } }
+    LaunchedEffect(items) {
+        val idx = items.indexOfFirst { it.id == currentId }
+        if (idx >= 0 && idx != pagerState.currentPage) {
+            pagerState.scrollToPage(idx)
+        } else if (idx < 0) {
+            items.getOrNull(pagerState.currentPage)?.id?.let { currentId = it }
+        }
+    }
     val current = items.getOrNull(pagerState.currentPage)
     // Ultra HDR photos: switch the screen into HDR mode while one is showing
     val hdr by produceState(false, current?.id, current?.modified) {
