@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -184,7 +185,33 @@ private fun GalleryRoot() {
                     onPlay = { id -> nav.navigate("player/$id") },
                     onEdit = { id -> nav.navigate(if (vm.find(id)?.isVideo == true) "videoedit/$id" else "editor/$id") },
                     onOpenPersonal = { nav.navigate("personal") },
+                    onShowOnMap = { lat, lon -> nav.navigate("map?lat=$lat&lon=$lon") },
+                    onEditAgain = { id -> nav.navigate("editagain/$id") },
                 )
+            }
+            composable(
+                "editagain/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            ) { entry ->
+                val copyId = entry.arguments?.getLong("id") ?: 0L
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                val recipe by androidx.compose.runtime.produceState<com.tim.gallery.edit.EditRecipe?>(null, copyId) {
+                    value = com.tim.gallery.edit.EditRecipes.load(ctx, copyId)
+                }
+                val copy = vm.find(copyId)
+                val r = recipe
+                val original = r?.let { vm.find(it.originalId) }
+                when {
+                    copy == null -> LaunchedEffect(Unit) { nav.popBackStack() }
+                    r == null -> Unit // loading
+                    original == null -> {
+                        LaunchedEffect(Unit) {
+                            android.widget.Toast.makeText(ctx, "The original photo is gone, so this edit can't be reopened. Editing the copy instead.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        EditorScreen(vm = vm, item = copy, onClose = { nav.popBackStack() })
+                    }
+                    else -> EditorScreen(vm = vm, item = original, onClose = { nav.popBackStack() }, reopen = r, editingCopy = copy)
+                }
             }
             composable(
                 "player/{id}",

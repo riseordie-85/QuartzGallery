@@ -101,6 +101,7 @@ fun ViewerScreen(
     onEdit: (Long) -> Unit,
     onOpenPersonal: () -> Unit,
     onShowOnMap: (Double, Double) -> Unit = { _, _ -> },
+    onEditAgain: (Long) -> Unit = {},
 ) {
     SystemBarIcons(darkBackground = true)
     val inTrash = albumKey == AlbumOps.TRASH_KEY
@@ -131,6 +132,7 @@ fun ViewerScreen(
     var hiding by remember { mutableStateOf<GalleryItem?>(null) }
     var copying by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var renaming by remember { mutableStateOf<GalleryItem?>(null) }
+    var editChoice by remember { mutableStateOf<GalleryItem?>(null) }
     var confirmDeleteForever by remember { mutableStateOf<GalleryItem?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var motionFile by remember { mutableStateOf<Pair<Long, java.io.File>?>(null) }
@@ -333,7 +335,9 @@ fun ViewerScreen(
                             ActionButton(Icons.Filled.PlayArrow, "Play") { onPlay(current.id) }
                             ActionButton(Icons.Outlined.ContentCut, "Trim") { onEdit(current.id) }
                         } else {
-                            ActionButton(Icons.Outlined.Tune, "Edit") { onEdit(current.id) }
+                            ActionButton(Icons.Outlined.Tune, "Edit") {
+                                if (com.tim.gallery.edit.EditRecipes.has(context, current.id)) editChoice = current else onEdit(current.id)
+                            }
                         }
                         ActionButton(
                             if (current.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -375,6 +379,26 @@ fun ViewerScreen(
         onDismiss = { copying = null },
         copy = true,
     )
+
+    editChoice?.let { item ->
+        AlertDialog(
+            onDismissRequest = { editChoice = null },
+            title = { Text("Edit") },
+            text = { Text("This is an edited copy. Reopen the edit to change its crop, filters, text and stickers — or edit this picture as it is now.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    editChoice = null
+                    onEditAgain(item.id)
+                }) { Text("Reopen edit") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    editChoice = null
+                    onEdit(item.id)
+                }) { Text("Edit as is") }
+            },
+        )
+    }
 
     renaming?.let { item ->
         AlbumNameDialog(

@@ -230,7 +230,7 @@ object WatermarkStore {
         opacity = o.optDouble("opacity", 0.7).toFloat(),
     )
 
-    private fun textToJson(t: TextLayer) = JSONObject().apply {
+    internal fun textToJson(t: TextLayer) = JSONObject().apply {
         put("text", t.text)
         put("color", t.color)
         put("font", t.fontKey)
@@ -258,7 +258,7 @@ object WatermarkStore {
 
     private fun JSONObject.f(name: String, def: Float) = optDouble(name, def.toDouble()).toFloat()
 
-    private fun textFromJson(o: JSONObject) = TextLayer(
+    internal fun textFromJson(o: JSONObject) = TextLayer(
         id = 0L,
         text = o.optString("text", ""),
         color = o.optInt("color", android.graphics.Color.WHITE),

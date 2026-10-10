@@ -1,5 +1,6 @@
 package com.tim.gallery.edit
 
+import android.content.ContentUris
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -82,12 +83,20 @@ private enum class Tool(val label: String, val icon: ImageVector) {
  * Saves a copy next to the original, or (optionally) overwrites the original.
  */
 @Composable
-fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
+fun EditorScreen(
+    vm: GalleryViewModel,
+    item: GalleryItem,
+    onClose: () -> Unit,
+    /** "Edit again": the saved edit to reopen on [item] (the original). */
+    reopen: EditRecipe? = null,
+    /** "Edit again": the copy that "Save" updates. */
+    editingCopy: GalleryItem? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val actions = rememberMediaActions(vm)
     val session = remember(item.id) { EditSession() }
-    val history = remember(item.id) { EditHistory(EditState()) }
+    val history = remember(item.id) { EditHistory(reopen?.state ?: EditState()) }
     val state = history.state
 
     var tool by rememberSaveable { mutableStateOf(Tool.CROP) }
@@ -133,6 +142,21 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
         session.base = base
         session.thumb = withContext(Dispatchers.Default) {
             squareThumb(Cutout.scaleDown(base, EditSession.PREVIEW_PX), EditSession.THUMB_PX)
+        }
+    }
+
+    // ---- reopening an edit that removed the background: do it again
+    LaunchedEffect(session.base) {
+        if (session.base != null && reopen != null && reopen.state.cutout != CutoutMode.OFF && session.foreground == null) {
+            cutoutBusy = true
+            try {
+                session.foreground = Cutout.removeBackground(session.base!!)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                cutoutError = "Couldn't redo the background removal."
+            }
+            cutoutBusy = false
         }
     }
 
@@ -257,6 +281,34 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
                 Toast.LENGTH_SHORT,
             ).show()
             if (uri != null) {
+                // Remember how it was made, for "Edit again"
+                EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state))
+                vm.refresh()
+                onClose()
+            }
+        }
+    }
+
+    /** "Edit again": replaces the edited copy's picture and remembers the new edit. */
+    fun updateCopy() {
+        val target = editingCopy ?: return
+        if (state.needsAlpha && target.mimeType.lowercase() != "image/png") {
+            Toast.makeText(context, "This edit has transparency, so it's saved as a new PNG copy.", Toast.LENGTH_LONG).show()
+            saveCopy()
+            return
+        }
+        saving = true
+        actions.withWriteAccess(listOf(target)) { granted ->
+            if (!granted) {
+                saving = false
+                return@withWriteAccess
+            }
+            val bmp = render()
+            val ok = bmp != null && MediaSaver.overwrite(context, target.uri, bmp, MediaSaver.formatFor(target.mimeType))
+            saving = false
+            Toast.makeText(context, if (ok) "Edit updated" else "Couldn't save the photo", Toast.LENGTH_SHORT).show()
+            if (ok) {
+                EditRecipes.save(context, target.id, EditRecipe(item.id, item.uri.toString(), history.state))
                 vm.refresh()
                 onClose()
             }
@@ -282,6 +334,8 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
             saving = false
             Toast.makeText(context, if (ok) "Original replaced" else "Couldn't save the photo", Toast.LENGTH_SHORT).show()
             if (ok) {
+                // The pixels a saved edit started from are gone now
+                EditRecipes.delete(context, item.id)
                 vm.refresh()
                 onClose()
             }
@@ -320,20 +374,35 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
             if (saving) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.padding(horizontal = 16.dp).size(22.dp))
             } else {
-                Button(onClick = { saveCopy() }, enabled = session.source != null && history.changed) { Text("Save copy") }
+                if (editingCopy != null) {
+                    Button(onClick = { updateCopy() }, enabled = session.source != null && history.changed) { Text("Save") }
+                } else {
+                    Button(onClick = { saveCopy() }, enabled = session.source != null && history.changed) { Text("Save copy") }
+                }
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White)
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Overwrite original") },
-                            enabled = session.source != null && history.changed,
-                            onClick = {
-                                menuOpen = false
-                                confirmOverwrite = true
-                            },
-                        )
+                        if (editingCopy != null) {
+                            DropdownMenuItem(
+                                text = { Text("Save as a new copy") },
+                                enabled = session.source != null,
+                                onClick = {
+                                    menuOpen = false
+                                    saveCopy()
+                                },
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text("Overwrite original") },
+                                enabled = session.source != null && history.changed,
+                                onClick = {
+                                    menuOpen = false
+                                    confirmOverwrite = true
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -329,6 +331,7 @@ fun FiltersPanel(
         if (state.filter == FilterPreset.DUOTONE) {
             DuotoneControls(state, onChange, colors)
         }
+        LooksRow(state, onChange)
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -343,6 +346,79 @@ fun FiltersPanel(
                 )
             }
         }
+    }
+}
+
+/** Your saved looks (adjustments + filter). Tap to apply, long-press to delete. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun LooksRow(state: EditState, onChange: (EditState, String?) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) { Looks.init(context) }
+    val looks by Looks.looks.collectAsState()
+    var naming by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<Look?>(null) }
+    val hasLook = state.adjust.isNotEmpty() || state.filter != FilterPreset.NONE
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item {
+            Text("Your looks", color = PanelDim, style = MaterialTheme.typography.labelMedium)
+        }
+        items(looks, key = { it.name }) { look ->
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)), RoundedCornerShape(16.dp))
+                    .combinedClickable(
+                        onClick = { onChange(look.applyTo(state), null) },
+                        onLongClick = { deleting = look },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(look.name, color = PanelText, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        item {
+            TextButton(onClick = { naming = true }, enabled = hasLook) { Text("+ Save this look") }
+        }
+    }
+    if (naming) {
+        var name by remember { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { naming = false },
+            title = { Text("Save look") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(30) },
+                    label = { Text("Name") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = name.isNotBlank(), onClick = {
+                    Looks.add(context, Look.from(name.trim(), state))
+                    naming = false
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { naming = false }) { Text("Cancel") } },
+        )
+    }
+    deleting?.let { look ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete “${look.name}”?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    Looks.remove(context, look)
+                    deleting = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
     }
 }
 
