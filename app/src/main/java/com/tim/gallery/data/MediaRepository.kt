@@ -161,6 +161,7 @@ class MediaRepository(private val context: Context) {
                 isFavorite = !c.isNull(favorite) && c.getInt(favorite) == 1,
                 modified = if (c.isNull(modified)) 0L else c.getLong(modified),
                 expiresMillis = if (c.isNull(expires)) 0L else c.getLong(expires) * 1000L,
+                addedMillis = addedMs,
             )
         }
     }

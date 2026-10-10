@@ -325,6 +325,7 @@ fun AlbumScreen(
                         if (!isFavorites && !isStickers) IconButton(onClick = onAddItems) {
                             Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "Add photos and videos")
                         }
+                        SortButton()
                         if (!isFavorites) Box {
                             IconButton(onClick = { menuOpen = true }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "More")

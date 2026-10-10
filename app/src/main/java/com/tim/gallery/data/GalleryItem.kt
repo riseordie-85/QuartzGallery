@@ -22,6 +22,8 @@ data class GalleryItem(
     val modified: Long,
     /** For items in the trash: when Android deletes them for good. 0 otherwise. */
     val expiresMillis: Long = 0L,
+    /** When it was added to the phone (download, copy, edit...). */
+    val addedMillis: Long = 0L,
 )
 
 data class Album(

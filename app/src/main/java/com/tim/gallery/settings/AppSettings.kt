@@ -20,6 +20,20 @@ data class GradientSettings(
     val angle: Float = 90f,
 )
 
+enum class SortField(val label: String) {
+    TAKEN("Date taken"),
+    ADDED("Date added"),
+    SIZE("Size"),
+    NAME("Name"),
+}
+
+data class SortSettings(val field: SortField = SortField.TAKEN, val descending: Boolean = true) {
+    val byDate: Boolean get() = this.field == SortField.TAKEN || this.field == SortField.ADDED
+}
+
+/** Thumbnail sizes the grid steps through when you pinch (smallest = most columns). */
+val GRID_CELL_SIZES = listOf(64, 80, 104, 140, 200)
+
 /** Ready-made gradient color pairs. */
 val GRADIENT_PRESETS: List<Pair<String, Pair<Int, Int>>> = listOf(
     "Quartz" to (0xFF2B1B4A.toInt() to 0xFF0F4C5C.toInt()),
@@ -42,6 +56,13 @@ object AppSettings {
     private val _gradient = MutableStateFlow(GradientSettings())
     val gradient: StateFlow<GradientSettings> = _gradient.asStateFlow()
 
+    private val _sort = MutableStateFlow(SortSettings())
+    val sort: StateFlow<SortSettings> = _sort.asStateFlow()
+
+    /** Grid thumbnail size in dp (pinch the grid to change it). */
+    private val _gridCell = MutableStateFlow(104)
+    val gridCell: StateFlow<Int> = _gridCell.asStateFlow()
+
     fun init(context: Context) {
         val p = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         prefs = p
@@ -54,6 +75,25 @@ object AppSettings {
             end = p.getInt("g_end", d.end),
             angle = p.getFloat("g_angle", d.angle),
         )
+        _sort.value = SortSettings(
+            field = runCatching { SortField.valueOf(p.getString("sort_field", null) ?: "TAKEN") }.getOrDefault(SortField.TAKEN),
+            descending = p.getBoolean("sort_desc", true),
+        )
+        _gridCell.value = p.getInt("grid_cell", 104).let { v -> GRID_CELL_SIZES.minByOrNull { kotlin.math.abs(it - v) } ?: 104 }
+    }
+
+    fun setSort(s: SortSettings) {
+        _sort.value = s
+        prefs?.edit()?.putString("sort_field", s.field.name)?.putBoolean("sort_desc", s.descending)?.apply()
+    }
+
+    /** One pinch step: [bigger] thumbnails (fewer columns) or smaller (more columns). */
+    fun stepGrid(bigger: Boolean) {
+        val i = GRID_CELL_SIZES.indexOf(_gridCell.value).coerceAtLeast(0)
+        val next = GRID_CELL_SIZES[(if (bigger) i + 1 else i - 1).coerceIn(0, GRID_CELL_SIZES.lastIndex)]
+        if (next == _gridCell.value) return
+        _gridCell.value = next
+        prefs?.edit()?.putInt("grid_cell", next)?.apply()
     }
 
     fun setTheme(mode: ThemeMode) {

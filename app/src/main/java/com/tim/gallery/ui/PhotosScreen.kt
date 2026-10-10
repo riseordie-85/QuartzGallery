@@ -10,6 +10,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.PhotoAlbum
@@ -84,6 +93,9 @@ fun PhotosScreen(
     val items by vm.items.collectAsStateWithLifecycle()
     val type by vm.typeFilter.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    var searching by rememberSaveable { mutableStateOf(vm.query.value.isNotEmpty()) }
+    val searchFocus = remember { FocusRequester() }
     val actions = rememberMediaActions(vm)
 
     var selected by remember { mutableStateOf(emptySet<Long>()) }
@@ -93,6 +105,10 @@ fun PhotosScreen(
     var copying by remember { mutableStateOf<List<GalleryItem>?>(null) }
     val selectedItems = { items.filter { it.id in selected } }
 
+    BackHandler(enabled = searching && selected.isEmpty()) {
+        searching = false
+        vm.query.value = ""
+    }
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
 
     // Forget selections for items that were moved away or deleted
@@ -110,16 +126,55 @@ fun PhotosScreen(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             if (selected.isEmpty()) {
-                TopAppBar(
-                    title = { Text("Quartz Gallery") },
-                    actions = {
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(Icons.Outlined.Settings, contentDescription = "Settings")
-                        }
-                    },
-                    colors = mainTopBarColors(),
-                    scrollBehavior = scrollBehavior,
-                )
+                if (searching) {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                searching = false
+                                vm.query.value = ""
+                            }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search") }
+                        },
+                        title = {
+                            TextField(
+                                value = query,
+                                onValueChange = { vm.query.value = it },
+                                placeholder = { Text("Name, album, month, year, video…") },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                ),
+                                modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
+                            )
+                            LaunchedEffect(Unit) { runCatching { searchFocus.requestFocus() } }
+                        },
+                        actions = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { vm.query.value = "" }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear")
+                                }
+                            }
+                        },
+                        colors = mainTopBarColors(),
+                    )
+                } else {
+                    TopAppBar(
+                        title = { Text("Quartz Gallery") },
+                        actions = {
+                            IconButton(onClick = { searching = true }) {
+                                Icon(Icons.Outlined.Search, contentDescription = "Search")
+                            }
+                            SortButton()
+                            IconButton(onClick = onOpenSettings) {
+                                Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                            }
+                        },
+                        colors = mainTopBarColors(),
+                        scrollBehavior = scrollBehavior,
+                    )
+                }
             } else {
                 SelectionTopBar(
                     count = selected.size,
@@ -153,6 +208,13 @@ fun PhotosScreen(
             onOpen = { onOpen(it.id) },
             onSelectionChange = { selected = it },
             contentPadding = padding,
+            empty = {
+                Text(
+                    if (query.isNotBlank()) "Nothing matches “$query”." else "Nothing to show here yet.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.fillMaxWidth().padding(48.dp),
+                )
+            },
             header = {
                 FiltersHeader(
                     access = access,

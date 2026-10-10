@@ -25,6 +25,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lock
@@ -55,6 +58,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import com.tim.gallery.settings.SortField
+import com.tim.gallery.settings.AppSettings
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
@@ -87,12 +98,46 @@ fun Set<Long>.toggle(id: Long): Set<Long> = if (id in this) this - id else this 
 
 private data class Section(val key: String, val title: String, val items: List<GalleryItem>)
 
-private fun buildSections(items: List<GalleryItem>): List<Section> {
+private fun buildSections(items: List<GalleryItem>, byAdded: Boolean = false): List<Section> {
     val fmt = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
     val zone = ZoneId.systemDefault()
-    return items
-        .groupBy { YearMonth.from(Instant.ofEpochMilli(it.dateMillis).atZone(zone)) }
-        .map { (month, list) -> Section(month.toString(), month.format(fmt), list) }
+    // Consecutive runs, so any date order (newest or oldest first) keeps its order
+    val out = ArrayList<Section>()
+    var current: YearMonth? = null
+    var bucket = ArrayList<GalleryItem>()
+    for (item in items) {
+        val month = YearMonth.from(Instant.ofEpochMilli(if (byAdded) item.addedMillis else item.dateMillis).atZone(zone))
+        if (month != current) {
+            current?.let { out += Section("${it}_${out.size}", it.format(fmt), bucket) }
+            current = month
+            bucket = ArrayList()
+        }
+        bucket += item
+    }
+    current?.let { out += Section("${it}_${out.size}", it.format(fmt), bucket) }
+    return out
+}
+
+/** Pinch on the grid to make thumbnails bigger or smaller. */
+private fun Modifier.pinchToResize(onStep: (bigger: Boolean) -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var zoom = 1f
+        do {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.changes.count { it.pressed } >= 2) {
+                zoom *= event.calculateZoom()
+                if (zoom > 1.35f) {
+                    onStep(true)
+                    zoom = 1f
+                } else if (zoom < 1f / 1.35f) {
+                    onStep(false)
+                    zoom = 1f
+                }
+                event.changes.forEach { it.consume() }
+            }
+        } while (event.changes.any { it.pressed })
+    }
 }
 
 /**
@@ -120,14 +165,19 @@ fun MediaGrid(
         )
     },
 ) {
+    val sort by AppSettings.sort.collectAsState()
+    val cellDp by AppSettings.gridCell.collectAsState()
+    val grouped = groupByMonth && sort.byDate
+    val byAdded = sort.field == SortField.ADDED
     // Grouping thousands of items by month happens in the background
     val sections by produceState(
-        initialValue = remember { if (groupByMonth) buildSections(items) else listOf(Section("all", "", items)) },
+        initialValue = remember { if (grouped) buildSections(items, byAdded) else listOf(Section("all", "", items)) },
         items,
-        groupByMonth,
+        grouped,
+        byAdded,
     ) {
         value = withContext(Dispatchers.Default) {
-            if (groupByMonth) buildSections(items) else listOf(Section("all", "", items))
+            if (grouped) buildSections(items, byAdded) else listOf(Section("all", "", items))
         }
     }
     val ids = remember(sections) { sections.flatMap { s -> s.items.map { it.id } } }
@@ -136,13 +186,14 @@ fun MediaGrid(
     val dragSession = remember { DragSelectSession() }
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(104.dp),
+        columns = GridCells.Adaptive(cellDp.dp),
         state = gridState,
         contentPadding = contentPadding,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
         modifier = modifier
             .fillMaxSize()
+            .pinchToResize { AppSettings.stepGrid(it) }
             .dragToSelect(
                 state = gridState,
                 ids = ids,
@@ -510,4 +561,48 @@ fun AlbumNameDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/** Sort menu (shared by the Photos tab and albums). */
+@Composable
+fun SortButton() {
+    val sort by AppSettings.sort.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "Sort")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            SortField.entries.forEach { f ->
+                DropdownMenuItem(
+                    text = { Text(f.label) },
+                    leadingIcon = {
+                        if (sort.field == f) Icon(Icons.Filled.Check, contentDescription = "Selected")
+                    },
+                    onClick = {
+                        AppSettings.setSort(sort.copy(field = f))
+                        open = false
+                    },
+                )
+            }
+            HorizontalDivider()
+            val (first, second) = when (sort.field) {
+                SortField.TAKEN, SortField.ADDED -> "Newest first" to "Oldest first"
+                SortField.SIZE -> "Largest first" to "Smallest first"
+                SortField.NAME -> "Z to A" to "A to Z"
+            }
+            listOf(true to first, false to second).forEach { (desc, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = {
+                        if (sort.descending == desc) Icon(Icons.Filled.Check, contentDescription = "Selected")
+                    },
+                    onClick = {
+                        AppSettings.setSort(sort.copy(descending = desc))
+                        open = false
+                    },
+                )
+            }
+        }
+    }
 }

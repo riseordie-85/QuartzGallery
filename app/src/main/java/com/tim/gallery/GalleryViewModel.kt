@@ -11,6 +11,9 @@ import com.tim.gallery.data.Album
 import com.tim.gallery.data.AlbumOps
 import com.tim.gallery.data.GalleryItem
 import com.tim.gallery.data.MediaRepository
+import com.tim.gallery.data.Search
+import com.tim.gallery.data.sortedFor
+import com.tim.gallery.settings.AppSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,16 +42,20 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
-    /** What the Photos tab shows, after the All / Photos / Videos filter. Stickers are left out. */
+    /** Search text for the Photos tab ("" = no search). */
+    val query = MutableStateFlow("")
+
+    /** What the Photos tab shows: All / Photos / Videos filter, search, and sort. Stickers are left out. */
     val items: StateFlow<List<GalleryItem>> =
-        combine(all, typeFilter) { list, type ->
+        combine(all, typeFilter, query, AppSettings.sort) { list, type, q, sort ->
+            val search = Search.compile(q)
             list.filter { item ->
                 !AlbumOps.isStickers(item.relativePath) && when (type) {
                     TypeFilter.ALL -> true
                     TypeFilter.PHOTOS -> !item.isVideo
                     TypeFilter.VIDEOS -> item.isVideo
-                }
-            }
+                } && (search == null || search.matches(item))
+            }.sortedFor(sort)
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Images in the sticker folder, newest first. */
@@ -100,7 +107,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         val belongs: (GalleryItem) -> Boolean = { item ->
             if (favorites) item.isFavorite else item.relativePath == key
         }
-        all.map { list -> list.filter(belongs) }
+        combine(all, AppSettings.sort) { list, sort -> list.filter(belongs).sortedFor(sort) }
             .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, all.value.filter(belongs))
     }
 
