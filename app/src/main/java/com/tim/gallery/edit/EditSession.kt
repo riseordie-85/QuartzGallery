@@ -11,7 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Bitmaps an editing session works with. Plain class holding Compose state. */
-class EditSession {
+class EditSession : LayerAssets {
     /** The photo, upright, up to 4096 px. */
     var base: Bitmap? by mutableStateOf(null)
 
@@ -30,13 +30,13 @@ class EditSession {
     /** Small square for filter thumbnails. */
     var thumb: Bitmap? by mutableStateOf(null)
 
-    /** Sticker images by uri string. */
+    /** Sticker, emoji and logo images by layer uri. */
     val stickers = mutableStateMapOf<String, Bitmap>()
+
+    override fun bitmap(uri: String): Bitmap? = stickers[uri]
 
     val fullW: Float get() = base?.width?.toFloat() ?: 1f
     val fullH: Float get() = base?.height?.toFloat() ?: 1f
-
-    fun stickerLookup(): (String) -> Bitmap? = { stickers[it] }
 
     companion object {
         const val PREVIEW_PX = 1600
@@ -172,7 +172,19 @@ object GeometryOps {
     fun setAspect(g: Geometry, aspect: AspectOption, w: Float, h: Float): Geometry =
         recenter(g.copy(aspect = aspect), w, h)
 
-    private fun recenter(g: Geometry, w: Float, h: Float): Geometry = g.copy(
-        crop = EditRenderer.centeredCrop(EditRenderer.resolvedRatio(g, w, h), EditRenderer.frameSize(g, w, h)),
-    )
+    /**
+     * Resets the crop box for the current ratio. Crop-in mode takes the largest box inside the
+     * photo; Background mode takes the smallest box that holds the whole photo, adding space
+     * (filled with the background color) to reach the ratio.
+     */
+    private fun recenter(g: Geometry, w: Float, h: Float): Geometry {
+        val ratio = EditRenderer.resolvedRatio(g, w, h)
+        val frame = EditRenderer.frameSize(g, w, h)
+        val crop = if (g.fill == FillMode.BACKGROUND) {
+            EditRenderer.fitCrop(ratio, frame)
+        } else {
+            EditRenderer.centeredCrop(ratio, frame)
+        }
+        return g.copy(crop = crop)
+    }
 }

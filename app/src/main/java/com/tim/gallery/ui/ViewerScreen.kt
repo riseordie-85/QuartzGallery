@@ -84,6 +84,7 @@ fun ViewerScreen(
     onPlay: (Long) -> Unit,
     onEdit: (Long) -> Unit,
 ) {
+    SystemBarIcons(darkBackground = true)
     val inTrash = albumKey == AlbumOps.TRASH_KEY
     val source = remember(albumKey) {
         when {

@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.BrandingWatermark
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
@@ -32,7 +34,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.DriveFileMove
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.SelectAll
@@ -262,8 +263,10 @@ fun SelectionTopBar(
     onShare: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit,
+    onWatermark: (() -> Unit)? = null,
 ) {
     TopAppBar(
+        colors = mainTopBarColors(),
         navigationIcon = {
             IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = "Clear selection") }
         },
@@ -277,7 +280,12 @@ fun SelectionTopBar(
                 )
             }
             IconButton(onClick = onShare) { Icon(Icons.Outlined.Share, contentDescription = "Share") }
-            IconButton(onClick = onMove) { Icon(Icons.Outlined.DriveFileMove, contentDescription = "Move to album") }
+            IconButton(onClick = onMove) { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = "Move to album") }
+            if (onWatermark != null) {
+                IconButton(onClick = onWatermark) {
+                    Icon(Icons.AutoMirrored.Outlined.BrandingWatermark, contentDescription = "Add watermark")
+                }
+            }
             IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete") }
         },
     )

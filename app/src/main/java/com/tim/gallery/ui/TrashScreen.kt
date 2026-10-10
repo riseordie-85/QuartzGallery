@@ -76,9 +76,11 @@ fun TrashScreen(
     }
 
     Scaffold(
+        containerColor = mainContainerColor(),
         topBar = {
             if (selected.isEmpty()) {
                 TopAppBar(
+                    colors = mainTopBarColors(),
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -102,6 +104,7 @@ fun TrashScreen(
                 )
             } else {
                 TopAppBar(
+                    colors = mainTopBarColors(),
                     navigationIcon = {
                         IconButton(onClick = { selected = emptySet() }) {
                             Icon(Icons.Filled.Close, contentDescription = "Clear selection")

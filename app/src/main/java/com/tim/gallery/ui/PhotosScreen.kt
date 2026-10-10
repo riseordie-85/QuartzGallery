@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.PhotoAlbum
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -21,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -37,6 +39,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import com.tim.gallery.edit.BatchWatermarkDialog
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
@@ -52,7 +57,7 @@ enum class MainTab(val route: String, val label: String, val icon: ImageVector) 
 
 @Composable
 fun MainTabsBar(current: MainTab, onSelect: (MainTab) -> Unit) {
-    NavigationBar {
+    NavigationBar(containerColor = mainNavBarColor()) {
         MainTab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = tab == current,
@@ -71,6 +76,7 @@ fun PhotosScreen(
     access: Access,
     onRequestAccess: () -> Unit,
     onOpen: (Long) -> Unit,
+    onOpenSettings: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
     val items by vm.items.collectAsStateWithLifecycle()
@@ -80,6 +86,7 @@ fun PhotosScreen(
 
     var selected by remember { mutableStateOf(emptySet<Long>()) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var watermarking by remember { mutableStateOf<List<GalleryItem>?>(null) }
     val selectedItems = { items.filter { it.id in selected } }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
@@ -95,10 +102,20 @@ fun PhotosScreen(
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     Scaffold(
+        containerColor = mainContainerColor(),
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             if (selected.isEmpty()) {
-                TopAppBar(title = { Text("Quartz Gallery") }, scrollBehavior = scrollBehavior)
+                TopAppBar(
+                    title = { Text("Quartz Gallery") },
+                    actions = {
+                        IconButton(onClick = onOpenSettings) {
+                            Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                        }
+                    },
+                    colors = mainTopBarColors(),
+                    scrollBehavior = scrollBehavior,
+                )
             } else {
                 SelectionTopBar(
                     count = selected.size,
@@ -112,6 +129,7 @@ fun PhotosScreen(
                     onShare = { actions.share(selectedItems()) },
                     onMove = { moving = selectedItems() },
                     onDelete = { actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() } },
+                    onWatermark = { watermarking = selectedItems() },
                 )
             }
         },
@@ -136,6 +154,20 @@ fun PhotosScreen(
                     type = type,
                     onType = { vm.typeFilter.value = it },
                 )
+            },
+        )
+    }
+
+    watermarking?.let { list ->
+        val ctx = LocalContext.current
+        BatchWatermarkDialog(
+            items = list,
+            onDismiss = { watermarking = null },
+            onFinished = { n ->
+                watermarking = null
+                selected = emptySet()
+                vm.refresh()
+                Toast.makeText(ctx, if (n == 1) "Saved 1 watermarked copy" else "Saved $n watermarked copies", Toast.LENGTH_SHORT).show()
             },
         )
     }

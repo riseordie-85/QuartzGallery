@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -46,6 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.widget.Toast
+import com.tim.gallery.edit.BatchWatermarkDialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +69,7 @@ fun AlbumsScreen(
     vm: GalleryViewModel,
     onOpenAlbum: (String) -> Unit,
     onOpenTrash: () -> Unit,
+    onOpenSettings: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
     val albums by vm.albums.collectAsStateWithLifecycle()
@@ -76,12 +80,17 @@ fun AlbumsScreen(
     var menuOpen by remember { mutableStateOf(false) }
 
     Scaffold(
+        containerColor = mainContainerColor(),
         topBar = {
             TopAppBar(
+                colors = mainTopBarColors(),
                 title = { Text("Albums") },
                 actions = {
                     IconButton(onClick = { creating = true }) {
                         Icon(Icons.Outlined.CreateNewFolder, contentDescription = "New album")
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Outlined.Settings, contentDescription = "Settings")
                     }
                     if (!canManageMedia) {
                         Box {
@@ -210,6 +219,7 @@ fun AlbumScreen(
 
     var selected by remember { mutableStateOf(emptySet<Long>()) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var watermarking by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -238,6 +248,7 @@ fun AlbumScreen(
     val canRename = !isFavorites && !isStickers && AlbumOps.parentOf(albumKey) != null
 
     Scaffold(
+        containerColor = mainContainerColor(),
         topBar = {
             if (selected.isNotEmpty()) {
                 SelectionTopBar(
@@ -252,9 +263,11 @@ fun AlbumScreen(
                     onShare = { actions.share(selectedItems()) },
                     onMove = { moving = selectedItems() },
                     onDelete = { actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() } },
+                    onWatermark = { watermarking = selectedItems() },
                 )
             } else {
                 TopAppBar(
+                    colors = mainTopBarColors(),
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -321,6 +334,20 @@ fun AlbumScreen(
                 } else {
                     EmptyAlbum(onAddItems)
                 }
+            },
+        )
+    }
+
+    watermarking?.let { list ->
+        val ctx = LocalContext.current
+        BatchWatermarkDialog(
+            items = list,
+            onDismiss = { watermarking = null },
+            onFinished = { n ->
+                watermarking = null
+                selected = emptySet()
+                vm.refresh()
+                Toast.makeText(ctx, if (n == 1) "Saved 1 watermarked copy" else "Saved $n watermarked copies", Toast.LENGTH_SHORT).show()
             },
         )
     }
@@ -425,8 +452,10 @@ fun PickerScreen(
     val name = AlbumOps.nameFromPath(targetKey)
 
     Scaffold(
+        containerColor = mainContainerColor(),
         topBar = {
             TopAppBar(
+                colors = mainTopBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onDone) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
                 },

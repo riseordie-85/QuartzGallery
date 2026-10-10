@@ -1,6 +1,20 @@
 package com.tim.gallery.ui
 
 import android.net.Uri
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.SurfaceView
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.math.abs
+import kotlin.math.min
+import kotlin.math.roundToInt
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -98,6 +112,7 @@ fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
     var scrubPos by remember { mutableFloatStateOf(0f) }
     var controlsVisible by remember { mutableStateOf(true) }
     var capturing by remember { mutableStateOf(false) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -176,13 +191,56 @@ fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
         seekTo(player.currentPosition + direction * frameMs)
     }
 
+    /**
+     * Copies the frame that's on screen right now, at the video's own resolution. This is
+     * exactly what you see, for every format (some, like WebM, can't be seeked precisely by
+     * Android's frame grabber, which used to return the first frame).
+     */
+    suspend fun grabDisplayedFrame(): Bitmap? {
+        val sv = playerView?.videoSurfaceView as? SurfaceView ?: return null
+        if (!sv.holder.surface.isValid || sv.width <= 0 || sv.height <= 0) return null
+        val vs = player.videoSize
+        if (vs.width <= 0 || vs.height <= 0) return null
+        var w = (vs.width * vs.pixelWidthHeightRatio).roundToInt()
+        var h = vs.height
+        // Rotated videos (most phone portrait videos) show turned; match what's on screen
+        val viewAspect = sv.width.toFloat() / sv.height
+        if (abs(viewAspect - h.toFloat() / w) < abs(viewAspect - w.toFloat() / h)) {
+            val t = w
+            w = h
+            h = t
+        }
+        val k = min(1f, 4096f / max(w, h))
+        w = (w * k).roundToInt().coerceAtLeast(1)
+        h = (h * k).roundToInt().coerceAtLeast(1)
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        return suspendCancellableCoroutine { cont ->
+            try {
+                PixelCopy.request(
+                    sv,
+                    bmp,
+                    { result -> if (cont.isActive) cont.resume(if (result == PixelCopy.SUCCESS) bmp else null) },
+                    Handler(Looper.getMainLooper()),
+                )
+            } catch (e: Exception) {
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+    }
+
     fun captureStill() {
         if (capturing) return
         player.pause()
         val at = player.currentPosition
         capturing = true
         scope.launch {
-            val saved = MediaSaver.saveVideoFrame(context, uri, at, title)
+            val frame = grabDisplayedFrame()
+            val stem = title.substringBeforeLast('.').ifBlank { "video" }
+            val saved = if (frame != null) {
+                MediaSaver.saveBitmap(context, frame, "${stem}_still_${at}ms.jpg")
+            } else {
+                MediaSaver.saveVideoFrame(context, uri, at, title)
+            }
             capturing = false
             snackbar.showSnackbar(
                 if (saved != null) "Still saved to ${MediaSaver.FOLDER_LABEL}"
@@ -199,6 +257,7 @@ fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
                     keepScreenOn = true
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
                     this.player = player
+                    playerView = this
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -249,22 +308,34 @@ fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
                     )
                 }
 
-                // Center: -10s, play/pause, +10s
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                // Center: -10s, play/pause, +10s, and big frame-step buttons under them
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.align(Alignment.Center),
                 ) {
-                    RoundButton(Icons.Filled.Replay10, "Back 10 seconds", 56) {
-                        seekTo(player.currentPosition - 10_000)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    ) {
+                        RoundButton(Icons.Filled.Replay10, "Back 10 seconds", 56) {
+                            seekTo(player.currentPosition - 10_000)
+                        }
+                        RoundButton(
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            if (isPlaying) "Pause" else "Play",
+                            76,
+                        ) { togglePlay() }
+                        RoundButton(Icons.Filled.Forward10, "Forward 10 seconds", 56) {
+                            seekTo(player.currentPosition + 10_000)
+                        }
                     }
-                    RoundButton(
-                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        if (isPlaying) "Pause" else "Play",
-                        76,
-                    ) { togglePlay() }
-                    RoundButton(Icons.Filled.Forward10, "Forward 10 seconds", 56) {
-                        seekTo(player.currentPosition + 10_000)
+                    Spacer(Modifier.height(20.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(56.dp),
+                    ) {
+                        FrameStepButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous frame", "−1 frame") { stepFrame(-1) }
+                        FrameStepButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next frame", "+1 frame") { stepFrame(1) }
                     }
                 }
 
@@ -314,14 +385,12 @@ fun VideoPlayerScreen(uri: Uri, title: String, onBack: () -> Unit) {
                         ),
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        IconButton(onClick = { stepFrame(-1) }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous frame", tint = Color.White)
-                        }
-                        Text("Frame", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
-                        IconButton(onClick = { stepFrame(1) }) {
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next frame", tint = Color.White)
-                        }
-                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "Hold a frame button to step continuously",
+                            color = Color.White.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.weight(1f),
+                        )
                         FilledTonalButton(onClick = { captureStill() }, enabled = !capturing) {
                             Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -355,5 +424,41 @@ private fun RoundButton(icon: ImageVector, description: String, sizeDp: Int, onC
             .background(Color.Black.copy(alpha = 0.45f), CircleShape),
     ) {
         Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size((sizeDp * 0.6f).dp))
+    }
+}
+
+/** Big, thumb-sized frame-step button. Tap for one frame; hold to keep stepping. */
+@Composable
+private fun FrameStepButton(icon: ImageVector, description: String, label: String, onStep: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val step by rememberUpdatedState(onStep)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(64.dp)
+                .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                .semantics { contentDescription = description }
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            step()
+                            val repeat = scope.launch {
+                                delay(450)
+                                while (true) {
+                                    step()
+                                    delay(90)
+                                }
+                            }
+                            tryAwaitRelease()
+                            repeat.cancel()
+                        },
+                    )
+                },
+        ) {
+            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium)
     }
 }

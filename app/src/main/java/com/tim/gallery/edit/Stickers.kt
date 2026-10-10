@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
@@ -39,6 +41,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,22 +80,26 @@ suspend fun saveSticker(context: android.content.Context, bitmap: Bitmap): Uri? 
 }
 
 /**
- * Bottom sheet listing everything in the sticker folder, plus "Add from photos"
- * (which goes through the sticker maker so you can cut out the subject).
+ * Bottom sheet with your stickers (everything in Pictures/Stickers, plus "Add from photos",
+ * which goes through the sticker maker so you can cut out the subject) and the sticker packs
+ * that come with the app. [onPick] gets the layer uri.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StickerSheet(
     vm: GalleryViewModel,
     onDismiss: () -> Unit,
-    onPick: (Uri) -> Unit,
+    onPick: (String) -> Unit,
 ) {
     val stickers by vm.stickers.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var making by remember { mutableStateOf<Uri?>(null) }
+    var packs by remember { mutableStateOf<List<StickerPacks.Pack>>(emptyList()) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) making = uri
     }
+    LaunchedEffect(Unit) { packs = StickerPacks.list(context) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Row(
@@ -107,9 +115,23 @@ fun StickerSheet(
                 Text("Add from photos")
             }
         }
-        if (stickers.isEmpty()) {
+        if (packs.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("My stickers") })
+                }
+                itemsIndexed(packs) { i, pack ->
+                    FilterChip(selected = tab == i + 1, onClick = { tab = i + 1 }, label = { Text(pack.name) })
+                }
+            }
+        }
+        val pack = packs.getOrNull(tab - 1)
+        if (pack == null && stickers.isEmpty()) {
             Text(
-                "No stickers yet. Add one from your photos — you can cut out the subject so it has no background. " +
+                "No stickers of your own yet. Add one from your photos — you can cut out the subject so it has no background. " +
                     "Any image you put in the Pictures/Stickers folder shows up here too.",
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
@@ -123,29 +145,35 @@ fun StickerSheet(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.heightIn(max = 480.dp),
             ) {
-                items(stickers, key = { it.id }) { item ->
-                    // Decode the file itself (not the system thumbnail) so transparency is kept
-                    val request = remember(item.uri, item.modified) {
-                        ImageRequest.Builder(context)
-                            .data(item.uri)
-                            .memoryCacheKey("sticker:${item.uri}#${item.modified}")
-                            .size(256)
-                            .build()
+                if (pack != null) {
+                    items(pack.stickers, key = { it }) { uri ->
+                        StickerCell(onClick = { onPick(uri) }) {
+                            AsyncImage(
+                                model = LayerLoader.previewModel(uri),
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
-                    Box(
-                        Modifier
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { onPick(item.uri) }
-                            .padding(8.dp)
-                    ) {
-                        AsyncImage(
-                            model = request,
-                            contentDescription = item.name,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                } else {
+                    items(stickers, key = { it.id }) { item ->
+                        // Decode the file itself (not the system thumbnail) so transparency is kept
+                        val request = remember(item.uri, item.modified) {
+                            ImageRequest.Builder(context)
+                                .data(item.uri)
+                                .memoryCacheKey("sticker:${item.uri}#${item.modified}")
+                                .size(256)
+                                .build()
+                        }
+                        StickerCell(onClick = { onPick(item.uri.toString()) }) {
+                            AsyncImage(
+                                model = request,
+                                contentDescription = item.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
                 }
             }
@@ -159,10 +187,22 @@ fun StickerSheet(
             onSaved = { saved ->
                 making = null
                 vm.refresh()
-                onPick(saved)
+                onPick(saved.toString())
             },
         )
     }
+}
+
+@Composable
+private fun StickerCell(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(8.dp)
+    ) { content() }
 }
 
 /**

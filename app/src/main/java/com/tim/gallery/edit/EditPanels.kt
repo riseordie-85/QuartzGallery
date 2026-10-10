@@ -17,6 +17,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.automirrored.outlined.BrandingWatermark
+import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -161,6 +168,7 @@ fun CropPanel(
     onStraightening: (Boolean) -> Unit,
     w: Float,
     h: Float,
+    colors: ColorTools,
 ) {
     val g = state.geometry
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -201,24 +209,28 @@ fun CropPanel(
                 colors = chipColors(),
             )
             if (g.fill == FillMode.BACKGROUND) {
-                Spacer(Modifier.width(4.dp))
-                listOf(AColor.BLACK, AColor.WHITE, AColor.TRANSPARENT).forEach { c ->
-                    val sel = g.fillColor == c
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(if (c == AColor.TRANSPARENT) Color.DarkGray else Color(c))
-                            .border(BorderStroke(if (sel) 3.dp else 1.dp, Color.White.copy(alpha = if (sel) 1f else 0.4f)), CircleShape)
-                            .clickable { onGeometry(g.copy(fillColor = c), null) },
-                    ) {
-                        if (c == AColor.TRANSPARENT) {
-                            Text("∅", color = Color.White, style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
+                Text(
+                    "Drag the box past the photo to add space",
+                    color = PanelDim,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.weight(1f),
+                )
             }
+        }
+
+        if (g.fill == FillMode.BACKGROUND) {
+            ColorRow(
+                selected = g.fillColor,
+                onPick = { onGeometry(g.copy(fillColor = it), null) },
+                onCustom = {
+                    colors.pick(g.fillColor, true) { s, c -> s.copy(geometry = s.geometry.copy(fillColor = c)) }
+                },
+                onEyedropper = {
+                    colors.eyedrop { s, c -> s.copy(geometry = s.geometry.copy(fillColor = c)) }
+                },
+                includeNone = true,
+                colors = listOf(AColor.BLACK, AColor.WHITE) + PALETTE.drop(2),
+            )
         }
 
         LazyRow(
@@ -301,6 +313,7 @@ fun FiltersPanel(
     state: EditState,
     onChange: (EditState, String?) -> Unit,
     onDone: () -> Unit,
+    colors: ColorTools,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (state.filter != FilterPreset.NONE) {
@@ -312,6 +325,9 @@ fun FiltersPanel(
                 onChange = { onChange(state.copy(filterStrength = it), "filter-strength") },
                 onDone = onDone,
             )
+        }
+        if (state.filter == FilterPreset.DUOTONE) {
+            DuotoneControls(state, onChange, colors)
         }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -327,6 +343,70 @@ fun FiltersPanel(
                 )
             }
         }
+    }
+}
+
+/** Shadow and highlight colors for the duotone filter, plus ready-made pairs. */
+@Composable
+private fun DuotoneControls(state: EditState, onChange: (EditState, String?) -> Unit, colors: ColorTools) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        item {
+            SwatchButton("Shadows", state.duoShadow) {
+                colors.pick(state.duoShadow, false) { s, c -> s.copy(duoShadow = c) }
+            }
+        }
+        item {
+            IconButton(onClick = { onChange(state.copy(duoShadow = state.duoHighlight, duoHighlight = state.duoShadow), null) }) {
+                Icon(Icons.Outlined.SwapHoriz, contentDescription = "Swap colors", tint = PanelText)
+            }
+        }
+        item {
+            SwatchButton("Highlights", state.duoHighlight) {
+                colors.pick(state.duoHighlight, false) { s, c -> s.copy(duoHighlight = c) }
+            }
+        }
+        item { Spacer(Modifier.width(4.dp)) }
+        items(DUOTONE_PRESETS) { (a, b) ->
+            val sel = state.duoShadow == a && state.duoHighlight == b
+            Row(
+                Modifier
+                    .size(if (sel) 34.dp else 30.dp)
+                    .clip(CircleShape)
+                    .border(BorderStroke(if (sel) 3.dp else 1.dp, Color.White.copy(alpha = if (sel) 1f else 0.4f)), CircleShape)
+                    .clickable { onChange(state.copy(duoShadow = a, duoHighlight = b), null) }
+            ) {
+                Box(Modifier.weight(1f).height(34.dp).background(Color(a)))
+                Box(Modifier.weight(1f).height(34.dp).background(Color(b)))
+            }
+        }
+    }
+}
+
+/** A labeled color chip that opens the picker. */
+@Composable
+fun SwatchButton(label: String, color: Int, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
+    ) {
+        Box(
+            Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .checkerboard(6f)
+                .background(Color(color))
+                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)), CircleShape)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = PanelText, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -381,6 +461,7 @@ fun CutoutPanel(
     onRemoveBackground: () -> Unit,
     onChange: (EditState) -> Unit,
     onSaveSticker: () -> Unit,
+    colors: ColorTools,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         if (!hasForeground) {
@@ -420,7 +501,13 @@ fun CutoutPanel(
                 }
             }
             if (state.cutout == CutoutMode.COLOR) {
-                ColorDots(PALETTE, state.cutoutColor, onPick = { onChange(state.copy(cutoutColor = it)) })
+                ColorRow(
+                    selected = state.cutoutColor,
+                    allowAlpha = false,
+                    onPick = { onChange(state.copy(cutoutColor = it)) },
+                    onCustom = { colors.pick(state.cutoutColor, false) { s, c -> s.copy(cutoutColor = c) } },
+                    onEyedropper = { colors.eyedrop { s, c -> s.copy(cutoutColor = c) } },
+                )
             }
             Row(Modifier.padding(horizontal = 16.dp)) {
                 OutlinedButton(onClick = onSaveSticker) {
@@ -435,34 +522,161 @@ fun CutoutPanel(
 
 // ===================================================================== Markup
 
+/** Opens the color picker / eyedropper. [apply] builds the new state from the latest state and the chosen color. */
+class ColorTools(
+    val pick: (initial: Int, allowAlpha: Boolean, apply: (EditState, Int) -> EditState) -> Unit,
+    val eyedrop: (apply: (EditState, Int) -> EditState) -> Unit,
+)
+
+private enum class LayerProp(val label: String) {
+    FILL("Fill"),
+    OUTLINE("Outline"),
+    COLOR("Color"),
+    THICKNESS("Thickness"),
+    STRETCH("Stretch"),
+    CORNERS("Corners"),
+    OPACITY("Opacity"),
+    POSITION("Position"),
+}
+
+private fun propsFor(layer: Layer): List<LayerProp> = when (layer) {
+    is ShapeLayer -> when {
+        layer.kind.isStroke -> listOf(LayerProp.COLOR, LayerProp.THICKNESS)
+        layer.kind == ShapeKind.ROUNDED -> listOf(LayerProp.FILL, LayerProp.OUTLINE, LayerProp.THICKNESS, LayerProp.STRETCH, LayerProp.CORNERS)
+        else -> listOf(LayerProp.FILL, LayerProp.OUTLINE, LayerProp.THICKNESS, LayerProp.STRETCH)
+    } + listOf(LayerProp.OPACITY, LayerProp.POSITION)
+    else -> listOf(LayerProp.OPACITY, LayerProp.POSITION)
+}
+
 @Composable
 fun MarkupPanel(
     selected: Layer?,
     onAddText: () -> Unit,
     onAddSticker: () -> Unit,
+    onAddEmoji: () -> Unit,
+    onAddShape: () -> Unit,
+    onAddWatermark: () -> Unit,
     onEditText: (TextLayer) -> Unit,
+    onChange: (Layer, String?) -> Unit,
+    onDone: () -> Unit,
+    onAlign: (Layer, Anchor) -> Unit,
     onBringToFront: (Layer) -> Unit,
     onDuplicate: (Layer) -> Unit,
     onDelete: (Layer) -> Unit,
+    onDeselect: () -> Unit,
+    colors: ColorTools,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
-            ToolButton(Icons.Outlined.TextFields, "Add text", onClick = onAddText)
-            ToolButton(Icons.Outlined.EmojiEmotions, "Add sticker", onClick = onAddSticker)
-            ToolButton(Icons.Outlined.Edit, "Edit text", enabled = selected is TextLayer) {
-                (selected as? TextLayer)?.let(onEditText)
+    if (selected == null) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+                ToolButton(Icons.Outlined.TextFields, "Text", onClick = onAddText)
+                ToolButton(Icons.Outlined.Image, "Sticker", onClick = onAddSticker)
+                ToolButton(Icons.Outlined.EmojiEmotions, "Emoji", onClick = onAddEmoji)
+                ToolButton(Icons.Outlined.Category, "Shape", onClick = onAddShape)
+                ToolButton(Icons.AutoMirrored.Outlined.BrandingWatermark, "Watermark", onClick = onAddWatermark)
             }
-            ToolButton(Icons.Outlined.FlipToFront, "To front", enabled = selected != null) { selected?.let(onBringToFront) }
-            ToolButton(Icons.Outlined.ContentCopy, "Copy", enabled = selected != null) { selected?.let(onDuplicate) }
-            ToolButton(Icons.Outlined.Delete, "Delete", enabled = selected != null) { selected?.let(onDelete) }
+            Text(
+                "Add something, or tap something on the photo to change it.",
+                color = PanelDim,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            )
         }
-        Text(
-            if (selected == null) "Tap something to select it."
-            else "Drag to move · pinch or use the corner dot to resize and rotate",
-            color = PanelDim,
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        )
+        return
+    }
+
+    val props = propsFor(selected)
+    var prop by remember(selected.id) { mutableStateOf(props.first()) }
+    if (prop !in props) prop = props.first()
+    val id = selected.id
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(props) { p ->
+                FilterChip(
+                    selected = p == prop,
+                    onClick = { prop = p },
+                    label = { Text(p.label) },
+                    colors = chipColors(),
+                )
+            }
+        }
+
+        Box(Modifier.fillMaxWidth().heightIn(min = 64.dp), contentAlignment = Alignment.Center) {
+            val shape = selected as? ShapeLayer
+            when (prop) {
+                LayerProp.OPACITY -> LabeledSlider(
+                    label = "Opacity",
+                    value = selected.opacity,
+                    range = 0.05f..1f,
+                    valueText = "${(selected.opacity * 100).roundToInt()}%",
+                    onChange = { onChange(selected.withOpacity(it), "opacity-$id") },
+                    onDone = onDone,
+                )
+                LayerProp.POSITION -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                ) {
+                    Text("Snap to", color = PanelDim, style = MaterialTheme.typography.labelLarge)
+                    AnchorGrid(selected = null, onPick = { onAlign(selected, it) }, tint = Color.White)
+                }
+                LayerProp.FILL -> if (shape != null) ColorRow(
+                    selected = shape.fill,
+                    onPick = { onChange(shape.copy(fill = it), null) },
+                    onCustom = { colors.pick(shape.fill, true) { s, c -> s.updateLayer(id) { (it as ShapeLayer).copy(fill = c) } } },
+                    onEyedropper = { colors.eyedrop { s, c -> s.updateLayer(id) { (it as ShapeLayer).copy(fill = c) } } },
+                    includeNone = true,
+                )
+                LayerProp.OUTLINE, LayerProp.COLOR -> if (shape != null) ColorRow(
+                    selected = shape.stroke,
+                    onPick = { onChange(shape.copy(stroke = it), null) },
+                    onCustom = { colors.pick(shape.stroke, true) { s, c -> s.updateLayer(id) { (it as ShapeLayer).copy(stroke = c) } } },
+                    onEyedropper = { colors.eyedrop { s, c -> s.updateLayer(id) { (it as ShapeLayer).copy(stroke = c) } } },
+                    includeNone = prop == LayerProp.OUTLINE,
+                )
+                LayerProp.THICKNESS -> if (shape != null) LabeledSlider(
+                    label = "Thickness",
+                    value = shape.strokeWidth,
+                    range = 0.1f..6f,
+                    valueText = String.format(Locale.US, "%.1f", shape.strokeWidth),
+                    onChange = { onChange(shape.copy(strokeWidth = it), "stroke-$id") },
+                    onDone = onDone,
+                )
+                LayerProp.STRETCH -> if (shape != null) LabeledSlider(
+                    label = "Stretch (wide ↔ tall)",
+                    value = -kotlin.math.ln(shape.aspect),
+                    range = -2f..2f,
+                    valueText = String.format(Locale.US, "%.2f : 1", shape.aspect),
+                    onChange = { v ->
+                        val snapped = if (kotlin.math.abs(v) < 0.05f) 0f else v
+                        onChange(shape.copy(aspect = kotlin.math.exp(-snapped)), "aspect-$id")
+                    },
+                    onDone = onDone,
+                )
+                LayerProp.CORNERS -> if (shape != null) LabeledSlider(
+                    label = "Corner rounding",
+                    value = shape.cornerRadius,
+                    range = 0f..0.5f,
+                    valueText = "${(shape.cornerRadius * 200).roundToInt()}%",
+                    onChange = { onChange(shape.copy(cornerRadius = it), "corner-$id") },
+                    onDone = onDone,
+                )
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+            if (selected is TextLayer) {
+                ToolButton(Icons.Outlined.Edit, "Edit text") { onEditText(selected) }
+            }
+            ToolButton(Icons.Outlined.FlipToFront, "To front") { onBringToFront(selected) }
+            ToolButton(Icons.Outlined.ContentCopy, "Copy") { onDuplicate(selected) }
+            ToolButton(Icons.Outlined.Delete, "Delete") { onDelete(selected) }
+            ToolButton(Icons.Outlined.Check, "Done", onClick = onDeselect)
+        }
     }
 }

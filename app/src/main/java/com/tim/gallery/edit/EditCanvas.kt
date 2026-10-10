@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -90,7 +93,9 @@ fun OutputView(
     val checker = rememberCheckerPaint()
     val density = LocalDensity.current
     val handleR = with(density) { 14.dp.toPx() }
-    val stickers = session.stickerLookup()
+    val assets: LayerAssets = session
+    // Redraw when a downloaded or imported font finishes loading
+    val fontVersion by Fonts.version.collectAsState()
 
     val currentState by rememberUpdatedState(state)
     val currentSelected by rememberUpdatedState(selectedId)
@@ -126,7 +131,7 @@ fun OutputView(
                 var target: Layer? = selected
                 var wasSelected = false
                 if (selected != null) {
-                    val sz = EditRenderer.layerSize(selected, out, stickers)
+                    val sz = EditRenderer.layerSize(selected, out, assets)
                     val del = handlePoint(selected, out, sz, -1f, -1f)
                     val xf = handlePoint(selected, out, sz, 1f, 1f)
                     mode = when {
@@ -136,7 +141,7 @@ fun OutputView(
                     }
                 }
                 if (mode == GestureMode.NONE) {
-                    val hit = layers.asReversed().firstOrNull { hits(it, p0, out, stickers, slop * 0.5f) }
+                    val hit = layers.asReversed().firstOrNull { hits(it, p0, out, assets, slop * 0.5f) }
                     if (hit != null) {
                         mode = GestureMode.MOVE
                         wasSelected = hit.id == currentSelected
@@ -225,6 +230,7 @@ fun OutputView(
         }
 
         Canvas(Modifier.fillMaxSize().then(gestures)) {
+            if (fontVersion < 0) return@Canvas
             val out = EditRenderer.outputSize(state.geometry, session.fullW, session.fullH)
             val (s, ox, oy) = fit(out.width, out.height, size.width, size.height)
             drawIntoCanvas { c ->
@@ -233,14 +239,14 @@ fun OutputView(
                 nc.translate(ox, oy)
                 if (state.needsAlpha) nc.drawRect(0f, 0f, out.width * s, out.height * s, checker)
                 nc.scale(s, s)
-                EditRenderer.drawOutput(nc, state, src, session.fullW, session.fullH, color, stickers)
+                EditRenderer.drawOutput(nc, state, src, session.fullW, session.fullH, color, assets)
                 nc.restore()
             }
 
             // Selection box and handles (screen only, never saved)
             val sel = state.layers.firstOrNull { it.id == selectedId }
             if (markup && sel != null) {
-                val sz = EditRenderer.layerSize(sel, out, stickers)
+                val sz = EditRenderer.layerSize(sel, out, assets)
                 val center = Offset(ox + sel.cx * out.width * s, oy + sel.cy * out.height * s)
                 val w = sz.width * s
                 val h = sz.height * s
@@ -285,8 +291,8 @@ private fun handlePoint(layer: Layer, out: FSize, size: FSize, sx: Float, sy: Fl
     return Offset(layer.cx * out.width + lx * c - ly * s, layer.cy * out.height + lx * s + ly * c)
 }
 
-private fun hits(layer: Layer, p: Offset, out: FSize, stickers: (String) -> Bitmap?, slop: Float): Boolean {
-    val size = EditRenderer.layerSize(layer, out, stickers)
+private fun hits(layer: Layer, p: Offset, out: FSize, assets: LayerAssets, slop: Float): Boolean {
+    val size = EditRenderer.layerSize(layer, out, assets)
     val d = p - Offset(layer.cx * out.width, layer.cy * out.height)
     val rad = Math.toRadians(-layer.rotation.toDouble())
     val c = cos(rad).toFloat()
@@ -302,6 +308,8 @@ private enum class Handle { TL, TR, BL, BR, L, T, R, B, MOVE }
 
 /**
  * Shows the whole straightened photo (its "frame") with a draggable crop box.
+ * In Background mode the view also shows space around the photo, and the crop box can be
+ * dragged past the photo's edges to add background.
  * [straightening] shows a finer grid while the angle slider is being dragged.
  */
 @Composable
@@ -321,19 +329,24 @@ fun CropView(
     val frame = EditRenderer.frameSize(g, session.fullW, session.fullH)
     val ratio = EditRenderer.resolvedRatio(g, session.fullW, session.fullH)
 
+    // The visible area. Kept still while a finger is down, so the view doesn't zoom mid-drag.
+    var frozenBounds by remember { mutableStateOf<NRect?>(null) }
+    val bounds = frozenBounds ?: EditRenderer.cropBounds(g, session.fullW, session.fullH)
+
     val currentCrop by rememberUpdatedState(g.crop)
     val currentRatio by rememberUpdatedState(ratio)
+    val currentBounds by rememberUpdatedState(bounds)
     val update by rememberUpdatedState(onCropChange)
     val end by rememberUpdatedState(onGestureEnd)
 
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val (s, _, _) = fit(frame.width, frame.height, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
-        val dispW = frame.width * s
-        val dispH = frame.height * s
+        val viewW = bounds.width * frame.width
+        val viewH = bounds.height * frame.height
+        val (s, _, _) = fit(viewW, viewH, constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
+        val dispW = viewW * s
+        val dispH = viewH * s
         val touchPx = with(density) { 28.dp.toPx() }
         val minPx = with(density) { 56.dp.toPx() }
-        val minW = min(minPx / dispW, 0.5f)
-        val minH = min(minPx / dispH, 0.5f)
 
         Box(Modifier.size(with(density) { dispW.toDp() }, with(density) { dispH.toDp() })) {
             Canvas(
@@ -342,48 +355,86 @@ fun CropView(
                     .pointerInput(dispW, dispH) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
+                            val b = currentBounds
+                            // Frame units (0..1 of the photo) per screen pixel
+                            val ux = b.width / dispW
+                            val uy = b.height / dispH
+                            val minW = min(minPx * ux, 0.5f)
+                            val minH = min(minPx * uy, 0.5f)
+                            val c0 = currentCrop
+                            // Crop box in 0..1 of the view, for picking the handle
+                            val shown = NRect(
+                                (c0.left - b.left) / b.width,
+                                (c0.top - b.top) / b.height,
+                                (c0.right - b.left) / b.width,
+                                (c0.bottom - b.top) / b.height,
+                            )
                             // Pick the handle where the finger landed, not where the drag got going
-                            val handle = pickHandle(down.position, currentCrop, dispW, dispH, touchPx, currentRatio != null)
+                            val handle = pickHandle(down.position, shown, dispW, dispH, touchPx, currentRatio != null)
                                 ?: return@awaitEachGesture
-                            val ratioN = currentRatio?.let { it * dispH / dispW }
-                            var crop = currentCrop
+                            val ratioN = currentRatio?.let { it * frame.height / frame.width }
+                            var crop = c0
                             val start = awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
                                 ?: return@awaitEachGesture
-                            val first = start.position - down.position
-                            crop = moveCrop(crop, handle, first.x / dispW, first.y / dispH, minW, minH, ratioN)
-                            update(crop)
-                            drag(start.id) { change ->
-                                val d = change.positionChange()
-                                change.consume()
-                                crop = moveCrop(crop, handle, d.x / dispW, d.y / dispH, minW, minH, ratioN)
+                            frozenBounds = b
+                            try {
+                                val first = start.position - down.position
+                                crop = moveCrop(crop, handle, first.x * ux, first.y * uy, minW, minH, ratioN, b)
                                 update(crop)
+                                drag(start.id) { change ->
+                                    val d = change.positionChange()
+                                    change.consume()
+                                    crop = moveCrop(crop, handle, d.x * ux, d.y * uy, minW, minH, ratioN, b)
+                                    update(crop)
+                                }
+                            } finally {
+                                frozenBounds = null
+                                end()
                             }
-                            end()
                         }
                     }
             ) {
+                // Screen position of a point in frame units (0..1 of the photo)
+                fun sx(u: Float) = (u - bounds.left) / bounds.width * size.width
+                fun sy(v: Float) = (v - bounds.top) / bounds.height * size.height
+
+                val crop = g.crop
+                val l = sx(crop.left)
+                val t = sy(crop.top)
+                val r = sx(crop.right)
+                val b = sy(crop.bottom)
+
                 drawIntoCanvas { c ->
                     val nc = c.nativeCanvas
                     nc.save()
                     nc.clipRect(0f, 0f, size.width, size.height)
-                    if (g.fill == FillMode.BACKGROUND && android.graphics.Color.alpha(g.fillColor) < 255) {
-                        nc.drawRect(0f, 0f, size.width, size.height, checker)
+                    // Background fill (only inside the crop box: that's what gets saved)
+                    if (g.fill == FillMode.BACKGROUND) {
+                        if (android.graphics.Color.alpha(g.fillColor) < 255) nc.drawRect(l, t, r, b, checker)
+                        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = g.fillColor }
+                        nc.drawRect(l, t, r, b, fillPaint)
                     }
-                    nc.scale(size.width / frame.width, size.height / frame.height)
+                    nc.translate(sx(0f), sy(0f))
+                    nc.scale(size.width / viewW, size.height / viewH)
                     EditRenderer.drawFrame(nc, state, src, session.fullW, session.fullH, color)
                     nc.restore()
                 }
 
-                val crop = g.crop
-                val l = crop.left * size.width
-                val t = crop.top * size.height
-                val r = crop.right * size.width
-                val b = crop.bottom * size.height
                 val dim = Color.Black.copy(alpha = 0.6f)
                 drawRect(dim, Offset(0f, 0f), Size(size.width, t))
                 drawRect(dim, Offset(0f, b), Size(size.width, size.height - b))
                 drawRect(dim, Offset(0f, t), Size(l, b - t))
                 drawRect(dim, Offset(r, t), Size(size.width - r, b - t))
+
+                // Outline of the photo itself when the box reaches past it
+                if (g.fill == FillMode.BACKGROUND && bounds != NRect.FULL) {
+                    drawRect(
+                        Color.White.copy(alpha = 0.35f),
+                        Offset(sx(0f), sy(0f)),
+                        Size(sx(1f) - sx(0f), sy(1f) - sy(0f)),
+                        style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))),
+                    )
+                }
 
                 val lines = if (straightening) 8 else 3
                 val guide = Color.White.copy(alpha = if (straightening) 0.3f else 0.35f)
@@ -437,27 +488,46 @@ private fun pickHandle(p: Offset, c: NRect, w: Float, h: Float, slop: Float, loc
 private fun clamp(v: Float, lo: Float, hi: Float): Float =
     if (lo > hi) (lo + hi) / 2f else v.coerceIn(lo, hi)
 
-private fun moveCrop(c: NRect, h: Handle, dx: Float, dy: Float, minW: Float, minH: Float, ratioN: Float?): NRect {
+/** Moves or resizes the crop box by (dx, dy) frame units, staying inside [area]. */
+private fun moveCrop(
+    c: NRect,
+    h: Handle,
+    dx: Float,
+    dy: Float,
+    minW: Float,
+    minH: Float,
+    ratioN: Float?,
+    area: NRect,
+): NRect {
     if (h == Handle.MOVE) {
-        val nx = clamp(c.left + dx, 0f, 1f - c.width)
-        val ny = clamp(c.top + dy, 0f, 1f - c.height)
+        val nx = clamp(c.left + dx, area.left, area.right - c.width)
+        val ny = clamp(c.top + dy, area.top, area.bottom - c.height)
         return NRect(nx, ny, nx + c.width, ny + c.height)
     }
-    if (ratioN != null) return resizeLocked(c, h, dx, dy, minW, minH, ratioN)
+    if (ratioN != null) return resizeLocked(c, h, dx, dy, minW, minH, ratioN, area)
 
     var l = c.left
     var t = c.top
     var r = c.right
     var b = c.bottom
-    if (h == Handle.TL || h == Handle.BL || h == Handle.L) l = clamp(l + dx, 0f, r - minW)
-    if (h == Handle.TR || h == Handle.BR || h == Handle.R) r = clamp(r + dx, l + minW, 1f)
-    if (h == Handle.TL || h == Handle.TR || h == Handle.T) t = clamp(t + dy, 0f, b - minH)
-    if (h == Handle.BL || h == Handle.BR || h == Handle.B) b = clamp(b + dy, t + minH, 1f)
+    if (h == Handle.TL || h == Handle.BL || h == Handle.L) l = clamp(l + dx, area.left, r - minW)
+    if (h == Handle.TR || h == Handle.BR || h == Handle.R) r = clamp(r + dx, l + minW, area.right)
+    if (h == Handle.TL || h == Handle.TR || h == Handle.T) t = clamp(t + dy, area.top, b - minH)
+    if (h == Handle.BL || h == Handle.BR || h == Handle.B) b = clamp(b + dy, t + minH, area.bottom)
     return NRect(l, t, r, b)
 }
 
 /** Corner drag that keeps the chosen aspect ratio, anchored at the opposite corner. */
-private fun resizeLocked(c: NRect, h: Handle, dx: Float, dy: Float, minW: Float, minH: Float, rn: Float): NRect {
+private fun resizeLocked(
+    c: NRect,
+    h: Handle,
+    dx: Float,
+    dy: Float,
+    minW: Float,
+    minH: Float,
+    rn: Float,
+    area: NRect,
+): NRect {
     val left = h == Handle.TL || h == Handle.BL
     val up = h == Handle.TL || h == Handle.TR
     val ax = if (left) c.right else c.left
@@ -466,7 +536,7 @@ private fun resizeLocked(c: NRect, h: Handle, dx: Float, dy: Float, minW: Float,
     val cy = (if (up) c.top else c.bottom) + dy
 
     var w = if (abs(dx) >= abs(dy * rn)) abs(cx - ax) else abs(cy - ay) * rn
-    val wMax = min(if (left) ax else 1f - ax, (if (up) ay else 1f - ay) * rn)
+    val wMax = min(if (left) ax - area.left else area.right - ax, (if (up) ay - area.top else area.bottom - ay) * rn)
     val wMin = min(max(minW, minH * rn), wMax)
     w = clamp(w, wMin, wMax)
     val hh = w / rn
@@ -475,7 +545,3 @@ private fun resizeLocked(c: NRect, h: Handle, dx: Float, dy: Float, minW: Float,
     val t = if (up) ay - hh else ay
     return NRect(l, t, l + w, t + hh)
 }
-
-/** Distance helper for the markup handles. */
-@Suppress("unused")
-private fun dist(a: Offset, b: Offset) = hypot(a.x - b.x, a.y - b.y)

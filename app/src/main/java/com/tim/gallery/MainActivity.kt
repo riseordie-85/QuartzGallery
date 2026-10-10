@@ -37,6 +37,8 @@ import com.tim.gallery.ui.AlbumsScreen
 import com.tim.gallery.data.AlbumOps
 import com.tim.gallery.edit.EditorScreen
 import com.tim.gallery.ui.GalleryTheme
+import com.tim.gallery.ui.MainBackground
+import com.tim.gallery.ui.SettingsScreen
 import com.tim.gallery.ui.TrashScreen
 import com.tim.gallery.ui.MainTab
 import com.tim.gallery.ui.MainTabsBar
@@ -93,42 +95,57 @@ private fun GalleryRoot() {
             popExitTransition = { fadeOut(tween(200)) },
         ) {
             composable(MainTab.PHOTOS.route) {
-                PhotosScreen(
-                    vm = vm,
-                    access = access,
-                    onRequestAccess = requestAccess,
-                    onOpen = { id -> nav.navigate("viewer/$id") },
-                    bottomBar = { MainTabsBar(MainTab.PHOTOS) { nav.switchTab(it) } },
-                )
+                MainBackground {
+                    PhotosScreen(
+                        vm = vm,
+                        access = access,
+                        onRequestAccess = requestAccess,
+                        onOpen = { id -> nav.navigate("viewer/$id") },
+                        onOpenSettings = { nav.navigate("settings") },
+                        bottomBar = { MainTabsBar(MainTab.PHOTOS) { nav.switchTab(it) } },
+                    )
+                }
             }
             composable(MainTab.ALBUMS.route) {
-                AlbumsScreen(
-                    vm = vm,
-                    onOpenAlbum = { key -> nav.navigate("album/${encodeKey(key)}") },
-                    onOpenTrash = { nav.navigate("trash") },
-                    bottomBar = { MainTabsBar(MainTab.ALBUMS) { nav.switchTab(it) } },
-                )
+                MainBackground {
+                    AlbumsScreen(
+                        vm = vm,
+                        onOpenAlbum = { key -> nav.navigate("album/${encodeKey(key)}") },
+                        onOpenTrash = { nav.navigate("trash") },
+                        onOpenSettings = { nav.navigate("settings") },
+                        bottomBar = { MainTabsBar(MainTab.ALBUMS) { nav.switchTab(it) } },
+                    )
+                }
             }
             composable("trash") {
-                TrashScreen(
-                    vm = vm,
-                    onBack = { nav.popBackStack() },
-                    onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(AlbumOps.TRASH_KEY)}") },
-                )
+                MainBackground {
+                    TrashScreen(
+                        vm = vm,
+                        onBack = { nav.popBackStack() },
+                        onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(AlbumOps.TRASH_KEY)}") },
+                    )
+                }
+            }
+            composable("settings") {
+                MainBackground {
+                    SettingsScreen(onBack = { nav.popBackStack() })
+                }
             }
             composable("album/{key}") { entry ->
                 val key = decodeKey(entry.arguments?.getString("key").orEmpty())
-                AlbumScreen(
-                    vm = vm,
-                    albumKey = key,
-                    onBack = { nav.popBackStack() },
-                    onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(key)}") },
-                    onAddItems = { nav.navigate("picker/${encodeKey(key)}") },
-                    onRenamed = { newKey ->
-                        nav.popBackStack()
-                        nav.navigate("album/${encodeKey(newKey)}")
-                    },
-                )
+                MainBackground {
+                    AlbumScreen(
+                        vm = vm,
+                        albumKey = key,
+                        onBack = { nav.popBackStack() },
+                        onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(key)}") },
+                        onAddItems = { nav.navigate("picker/${encodeKey(key)}") },
+                        onRenamed = { newKey ->
+                            nav.popBackStack()
+                            nav.navigate("album/${encodeKey(newKey)}")
+                        },
+                    )
+                }
             }
             composable("picker/{key}") { entry ->
                 PickerScreen(

@@ -1,7 +1,6 @@
 package com.tim.gallery.edit
 
 import android.graphics.Bitmap
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -107,6 +106,20 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
     var textEditing by remember { mutableStateOf<TextLayer?>(null) }
     var addingText by remember { mutableStateOf(false) }
     var stickerSheet by remember { mutableStateOf(false) }
+    var emojiSheet by remember { mutableStateOf(false) }
+    var shapeSheet by remember { mutableStateOf(false) }
+    var watermarkSheet by remember { mutableStateOf(false) }
+
+    // Color picker and eyedropper requests from the panels
+    var colorRequest by remember { mutableStateOf<ColorRequest?>(null) }
+    var eyedropRequest by remember { mutableStateOf<ColorRequest?>(null) }
+    var eyedropSample by remember { mutableStateOf<Bitmap?>(null) }
+    val colorTools = remember {
+        ColorTools(
+            pick = { initial, alpha, apply -> colorRequest = ColorRequest(initial, alpha, apply) },
+            eyedrop = { apply -> eyedropRequest = ColorRequest(0, false, apply) },
+        )
+    }
 
     // ---- load the photo
     LaunchedEffect(item.id) {
@@ -134,21 +147,42 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
         session.preview = preview
     }
 
-    // ---- load sticker images that layers use
-    LaunchedEffect(state.layers) {
-        state.layers.filterIsInstance<StickerLayer>().map { it.uri }.distinct()
-            .filter { it !in session.stickers }
-            .forEach { uri ->
-                val bmp = withContext(Dispatchers.IO) {
-                    runCatching { MediaSaver.decodeUpright(context, Uri.parse(uri), 1024) }.getOrNull()
-                }
-                if (bmp != null) session.stickers[uri] = bmp
-            }
+    // ---- load the pictures and fonts that layers use (keyed on the sets, so dragging doesn't restart it)
+    val neededPictures = remember(state.layers) { state.layers.filterIsInstance<StickerLayer>().map { it.uri }.toSet() }
+    val neededFonts = remember(state.layers) { state.layers.filterIsInstance<TextLayer>().map { it.fontKey }.toSet() }
+    LaunchedEffect(neededPictures) {
+        neededPictures.filter { it !in session.stickers }
+            .forEach { uri -> LayerLoader.load(context, uri)?.let { session.stickers[uri] = it } }
+    }
+    LaunchedEffect(neededFonts) {
+        neededFonts.filter { Fonts.cached(it) == null }.forEach { Fonts.load(context, it) }
+    }
+
+    // ---- the eyedropper samples the photo (with color changes, without stickers or text)
+    LaunchedEffect(eyedropRequest) {
+        eyedropSample = null
+        if (eyedropRequest == null) return@LaunchedEffect
+        val base = session.base ?: return@LaunchedEffect
+        val snap = history.state
+        val sampleState = snap.copy(
+            layers = emptyList(),
+            geometry = snap.geometry.copy(crop = NRect.FULL, fillColor = android.graphics.Color.TRANSPARENT),
+        )
+        eyedropSample = onGpu {
+            EditRenderer.export(sampleState, Cutout.scaleDown(base, EditSession.PREVIEW_PX), LayerAssets.NONE)
+        } ?: session.preview
     }
 
     fun update(new: EditState, tag: String? = null) = history.set(new, tag)
 
-    fun newLayerId(): Long = (state.layers.maxOfOrNull { it.id } ?: 0L) + 1L
+    fun newLayerId(): Long = (history.state.layers.maxOfOrNull { it.id } ?: 0L) + 1L
+
+    fun addLayer(layer: Layer) {
+        update(history.state.copy(layers = history.state.layers + layer))
+        selectedLayer = layer.id
+    }
+
+    fun outSize() = EditRenderer.outputSize(history.state.geometry, session.fullW, session.fullH)
 
     fun removeBackground() {
         val base = session.base ?: return
@@ -181,8 +215,18 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
     suspend fun render(): Bitmap? {
         val src = session.source ?: return null
         val snapshot = history.state
-        val stickers = session.stickerLookup()
-        return onGpu { EditRenderer.export(snapshot, src, stickers) }
+        // Give fonts that are still downloading (or failed earlier) one more try
+        val missing = snapshot.layers.filterIsInstance<TextLayer>().map { it.fontKey }.distinct()
+            .filter { Fonts.cached(it) == null }
+            .filter { Fonts.load(context, it) == null }
+        if (missing.isNotEmpty()) {
+            Toast.makeText(
+                context,
+                "Couldn't download ${missing.joinToString { Fonts.label(it) }} — that text was saved in the standard bold font.",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        return onGpu { EditRenderer.export(snapshot, src, session) }
     }
 
     fun saveCopy() {
@@ -248,14 +292,18 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
         if (history.changed) confirmDiscard = true else onClose()
     }
 
-    BackHandler { close() }
+    com.tim.gallery.ui.SystemBarIcons(darkBackground = true)
+
+    BackHandler {
+        if (eyedropRequest != null) eyedropRequest = null else close()
+    }
 
     val selected = state.layers.firstOrNull { it.id == selectedLayer }
 
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
@@ -361,9 +409,16 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
                         onStraightening = { straightening = it },
                         w = session.fullW,
                         h = session.fullH,
+                        colors = colorTools,
                     )
                     Tool.ADJUST -> AdjustPanel(state, onChange = { s, tag -> update(s, tag) }, onDone = { history.endGesture() })
-                    Tool.FILTERS -> FiltersPanel(session, state, onChange = { s, tag -> update(s, tag) }, onDone = { history.endGesture() })
+                    Tool.FILTERS -> FiltersPanel(
+                        session,
+                        state,
+                        onChange = { s, tag -> update(s, tag) },
+                        onDone = { history.endGesture() },
+                        colors = colorTools,
+                    )
                     Tool.CUTOUT -> CutoutPanel(
                         state = state,
                         hasForeground = session.foreground != null,
@@ -372,12 +427,22 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
                         onRemoveBackground = { removeBackground() },
                         onChange = { update(it) },
                         onSaveSticker = { saveCutoutAsSticker() },
+                        colors = colorTools,
                     )
                     Tool.MARKUP -> MarkupPanel(
                         selected = selected,
                         onAddText = { addingText = true },
                         onAddSticker = { stickerSheet = true },
+                        onAddEmoji = { emojiSheet = true },
+                        onAddShape = { shapeSheet = true },
+                        onAddWatermark = { watermarkSheet = true },
                         onEditText = { textEditing = it },
+                        onChange = { layer, tag -> update(history.state.updateLayer(layer.id) { layer }, tag) },
+                        onDone = { history.endGesture() },
+                        onAlign = { layer, anchor ->
+                            val (cx, cy) = anchorPosition(layer, anchor, 0.04f, outSize(), session)
+                            update(history.state.updateLayer(layer.id) { it.moved(cx, cy, it.scale, it.rotation) })
+                        },
                         onBringToFront = { layer ->
                             update(state.copy(layers = state.layers.filterNot { it.id == layer.id } + layer))
                         },
@@ -388,13 +453,14 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
                                 layer.scale,
                                 layer.rotation,
                             )
-                            update(state.copy(layers = state.layers + copy))
-                            selectedLayer = copy.id
+                            addLayer(copy)
                         },
                         onDelete = { layer ->
                             update(state.copy(layers = state.layers.filterNot { it.id == layer.id }))
                             selectedLayer = null
                         },
+                        onDeselect = { selectedLayer = null },
+                        colors = colorTools,
                     )
                 }
             }
@@ -426,6 +492,21 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
         }
     }
 
+    eyedropRequest?.let { req ->
+        Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            EyedropperOverlay(
+                sample = eyedropSample,
+                onPick = { c ->
+                    eyedropRequest = null
+                    ColorRecents.add(c)
+                    update(req.apply(history.state, c))
+                },
+                onCancel = { eyedropRequest = null },
+            )
+        }
+    }
+    }
+
     // ---------------------------------------------------- dialogs
     if (addingText || textEditing != null) {
         val editing = textEditing
@@ -439,9 +520,7 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
                 if (editing != null) {
                     update(state.copy(layers = state.layers.map { if (it.id == editing.id) result else it }))
                 } else {
-                    val layer = result.copy(id = newLayerId(), cx = 0.5f, cy = 0.5f)
-                    update(state.copy(layers = state.layers + layer))
-                    selectedLayer = layer.id
+                    addLayer(result.copy(id = newLayerId(), cx = 0.5f, cy = 0.5f))
                 }
                 addingText = false
                 textEditing = null
@@ -455,9 +534,59 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
             onDismiss = { stickerSheet = false },
             onPick = { uri ->
                 stickerSheet = false
-                val layer = StickerLayer(id = newLayerId(), uri = uri.toString())
-                update(state.copy(layers = state.layers + layer))
-                selectedLayer = layer.id
+                addLayer(StickerLayer(id = newLayerId(), uri = uri))
+            },
+        )
+    }
+
+    if (emojiSheet) {
+        EmojiSheet(
+            onDismiss = { emojiSheet = false },
+            onPick = { e ->
+                emojiSheet = false
+                addLayer(StickerLayer(id = newLayerId(), uri = "emoji:$e", scale = 0.25f))
+            },
+        )
+    }
+
+    if (shapeSheet) {
+        ShapeSheet(
+            onDismiss = { shapeSheet = false },
+            onPick = { kind ->
+                shapeSheet = false
+                addLayer(ShapeLayer.default(newLayerId(), kind))
+            },
+        )
+    }
+
+    if (watermarkSheet) {
+        WatermarkSheet(
+            onDismiss = { watermarkSheet = false },
+            onApply = { preset ->
+                watermarkSheet = false
+                scope.launch {
+                    preset.logo?.let { uri ->
+                        if (uri !in session.stickers) LayerLoader.load(context, uri)?.let { session.stickers[uri] = it }
+                    }
+                    preset.text?.fontKey?.let { Fonts.load(context, it) }
+                    addLayer(preset.toLayer(newLayerId(), outSize(), session))
+                }
+            },
+        )
+    }
+
+    colorRequest?.let { req ->
+        ColorPickerDialog(
+            initial = req.initial,
+            allowAlpha = req.allowAlpha,
+            onDismiss = { colorRequest = null },
+            onPick = { c ->
+                colorRequest = null
+                update(req.apply(history.state, c))
+            },
+            onEyedropper = {
+                colorRequest = null
+                eyedropRequest = req
             },
         )
     }
@@ -505,3 +634,10 @@ fun EditorScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit) {
         )
     }
 }
+
+/** A pending color choice: where it starts, and how to apply it to the latest edit state. */
+private class ColorRequest(
+    val initial: Int,
+    val allowAlpha: Boolean,
+    val apply: (EditState, Int) -> EditState,
+)
