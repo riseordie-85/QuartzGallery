@@ -37,19 +37,74 @@ class MediaRepository(private val context: Context) {
     /** Every photo and video, newest first (trashed items excluded). */
     suspend fun loadAll(): List<GalleryItem> = query(MediaStore.MATCH_EXCLUDE)
 
-    /** Items in Android's trash, soonest-to-expire first. */
-    suspend fun loadTrash(): List<GalleryItem> =
-        query(MediaStore.MATCH_ONLY).sortedBy { it.expiresMillis }
+    private var lastVersion: String? = null
+    private var lastGeneration = -1L
 
-    private suspend fun query(matchTrashed: Int): List<GalleryItem> = withContext(Dispatchers.IO) {
+    /**
+     * Like [loadAll], but after the first load only re-reads what changed (MediaStore keeps a
+     * change counter per item), which keeps big libraries quick. Falls back to a full load when
+     * the phone has several storage volumes or the media index was rebuilt.
+     */
+    suspend fun loadAllIncremental(previous: List<GalleryItem>): List<GalleryItem> = withContext(Dispatchers.IO) {
+        val volumes = MediaStore.getExternalVolumeNames(context)
+        val version = MediaStore.getVersion(context)
+        val canDiff = previous.isNotEmpty() && volumes.size == 1 && version == lastVersion && lastGeneration >= 0
+        val generation = runCatching { MediaStore.getGeneration(context, volumes.first()) }.getOrDefault(-1L)
+        val result = if (!canDiff) {
+            query(MediaStore.MATCH_EXCLUDE)
+        } else {
+            val ids = queryIds()
+            val changed = query(MediaStore.MATCH_EXCLUDE, "${MediaStore.MediaColumns.GENERATION_MODIFIED} > ?", lastGeneration.toString())
+            val changedIds = changed.mapTo(HashSet()) { it.id }
+            val known = previous.mapTo(HashSet()) { it.id }
+            if (ids.any { it !in known && it !in changedIds }) {
+                // Items we can see now that didn't change (e.g. more photos shared with the app): reload everything
+                query(MediaStore.MATCH_EXCLUDE)
+            } else {
+                (previous.filter { it.id in ids && it.id !in changedIds } + changed).sortedByDescending { it.dateMillis }
+            }
+        }
+        lastVersion = version
+        lastGeneration = generation
+        result
+    }
+
+    /** Just the ids of every current photo and video (cheap; used to notice deletions). */
+    private fun queryIds(): HashSet<Long> {
         val args = Bundle().apply {
             putString(ContentResolver.QUERY_ARG_SQL_SELECTION, "${FileColumns.MEDIA_TYPE} IN (?, ?)")
             putStringArray(
                 ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
-                arrayOf(
+                arrayOf(FileColumns.MEDIA_TYPE_IMAGE.toString(), FileColumns.MEDIA_TYPE_VIDEO.toString()),
+            )
+            putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_EXCLUDE)
+        }
+        val out = HashSet<Long>()
+        context.contentResolver.query(collection, arrayOf(FileColumns._ID), args, null)?.use { c ->
+            while (c.moveToNext()) out += c.getLong(0)
+        }
+        return out
+    }
+
+    /** Items in Android's trash, soonest-to-expire first. */
+    suspend fun loadTrash(): List<GalleryItem> =
+        query(MediaStore.MATCH_ONLY).sortedBy { it.expiresMillis }
+
+    private suspend fun query(
+        matchTrashed: Int,
+        extraSelection: String? = null,
+        extraArg: String? = null,
+    ): List<GalleryItem> = withContext(Dispatchers.IO) {
+        val args = Bundle().apply {
+            val base = "${FileColumns.MEDIA_TYPE} IN (?, ?)"
+            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, if (extraSelection != null) "$base AND $extraSelection" else base)
+            putStringArray(
+                ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+                listOfNotNull(
                     FileColumns.MEDIA_TYPE_IMAGE.toString(),
                     FileColumns.MEDIA_TYPE_VIDEO.toString(),
-                ),
+                    extraArg,
+                ).toTypedArray(),
             )
             putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${FileColumns.DATE_ADDED} DESC")
             putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, matchTrashed)

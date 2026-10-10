@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -87,6 +88,9 @@ private fun GalleryRoot() {
 
     PermissionGate(onRefresh = { vm.refresh() }) { access, requestAccess ->
         val nav = rememberNavController()
+        // App-wide actions, so "Undo" still works after leaving the screen that did something
+        val rootActions = com.tim.gallery.ui.rememberMediaActions(vm)
+        Box(Modifier.fillMaxSize()) {
         NavHost(
             navController = nav,
             startDestination = MainTab.PHOTOS.route,
@@ -204,6 +208,14 @@ private fun GalleryRoot() {
                     EditorScreen(vm = vm, item = item, onClose = { nav.popBackStack() })
                 }
             }
+        }
+            com.tim.gallery.ui.UndoHost(
+                actions = rootActions,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 80.dp),
+            )
         }
     }
 }

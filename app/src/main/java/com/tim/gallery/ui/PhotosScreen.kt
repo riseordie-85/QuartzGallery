@@ -90,6 +90,7 @@ fun PhotosScreen(
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var watermarking by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var hiding by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var copying by remember { mutableStateOf<List<GalleryItem>?>(null) }
     val selectedItems = { items.filter { it.id in selected } }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected = emptySet() }
@@ -134,6 +135,7 @@ fun PhotosScreen(
                     onDelete = { actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() } },
                     onWatermark = { watermarking = selectedItems() },
                     onPersonal = { hiding = selectedItems() },
+                    onCopy = { copying = selectedItems() },
                 )
             }
         },
@@ -191,6 +193,16 @@ fun PhotosScreen(
             },
         )
     }
+
+    MoveToAlbumFlow(
+        vm = vm,
+        actions = actions,
+        items = copying,
+        excludeKey = null,
+        onDismiss = { copying = null },
+        onMoved = { if (it > 0) selected = emptySet() },
+        copy = true,
+    )
 
     MoveToAlbumFlow(
         vm = vm,

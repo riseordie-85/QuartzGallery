@@ -45,7 +45,7 @@ class MediaActions internal constructor(
     private var pending: ((Boolean) -> Unit)? = null
 
     /** Moves [items] into the album folder [target]. [onFinished] gets how many moved (0 if cancelled). */
-    fun move(items: List<GalleryItem>, target: String, onFinished: (Int) -> Unit = {}) {
+    fun move(items: List<GalleryItem>, target: String, undoable: Boolean = true, onFinished: (Int) -> Unit = {}) {
         val toMove = items.filter { !it.relativePath.equals(target, ignoreCase = true) }
         if (toMove.isEmpty()) {
             toast("Already in that album")
@@ -60,10 +60,18 @@ class MediaActions internal constructor(
             val moved = AlbumOps.move(context, toMove, target)
             if (moved > 0) vm.removeEmptyAlbum(target)
             val name = AlbumOps.nameFromPath(target)
-            toast(
-                if (moved == toMove.size) "Moved ${itemCount(moved)} to $name"
-                else "Moved $moved of ${toMove.size} to $name. Android refused the rest."
-            )
+            val message = if (moved == toMove.size) "Moved ${itemCount(moved)} to $name"
+            else "Moved $moved of ${toMove.size} to $name. Android refused the rest."
+            if (undoable && moved > 0) {
+                UndoCenter.post(message) { a ->
+                    // Put each item back in the album it came from
+                    toMove.groupBy { it.relativePath }.forEach { (from, group) ->
+                        a.move(group.map { it.copy(relativePath = target) }, from, undoable = false)
+                    }
+                }
+            } else {
+                toast(message)
+            }
             vm.refresh()
             onFinished(moved)
         }
@@ -100,7 +108,10 @@ class MediaActions internal constructor(
     fun trash(items: List<GalleryItem>, onFinished: (Boolean) -> Unit = {}) {
         if (items.isEmpty()) return
         request({ MediaStore.createTrashRequest(context.contentResolver, items.map { it.uri }, true) }) { ok ->
-            if (ok) vm.refresh()
+            if (ok) {
+                vm.refresh()
+                UndoCenter.post("Moved ${itemCount(items.size)} to trash") { a -> a.restore(items) }
+            }
             onFinished(ok)
         }
     }
@@ -125,6 +136,55 @@ class MediaActions internal constructor(
             onFinished(ok)
         }
     }
+
+    /**
+     * Copies [items] into the album folder [target] (the originals stay where they are).
+     * New files belong to this app, so no confirmation is needed, and undo just deletes them.
+     */
+    fun copy(items: List<GalleryItem>, target: String, onFinished: (Int) -> Unit = {}) {
+        if (items.isEmpty()) return
+        vm.viewModelScope.launch {
+            val copies = AlbumOps.copy(context, items, target)
+            vm.removeEmptyAlbum(target)
+            vm.refresh()
+            val name = AlbumOps.nameFromPath(target)
+            val message = if (copies.size == items.size) "Copied ${itemCount(copies.size)} to $name"
+            else "Copied ${copies.size} of ${items.size} to $name"
+            if (copies.isNotEmpty()) {
+                UndoCenter.post(message) { _ ->
+                    vm.viewModelScope.launch {
+                        AlbumOps.deleteOwn(context, copies)
+                        vm.refresh()
+                    }
+                }
+            } else {
+                toast("Couldn't copy to $name")
+            }
+            onFinished(copies.size)
+        }
+    }
+
+    /** Renames a photo or video file (the extension is kept). */
+    fun rename(item: GalleryItem, newStem: String, onFinished: (Boolean) -> Unit = {}) {
+        val ext = item.name.substringAfterLast('.', "")
+        val newName = if (ext.isNotEmpty()) "${newStem.trim()}.$ext" else newStem.trim()
+        if (newName == item.name) {
+            onFinished(true)
+            return
+        }
+        withWriteAccess(listOf(item)) { granted ->
+            if (!granted) {
+                onFinished(false)
+                return@withWriteAccess
+            }
+            val ok = AlbumOps.rename(context, item, newName)
+            toast(if (ok) "Renamed to $newName" else "Android didn't allow that name")
+            if (ok) vm.refresh()
+            onFinished(ok)
+        }
+    }
+
+    fun refreshGallery() = vm.refresh()
 
     /** Adds or removes items from Favorites (Android's shared favorite flag). */
     fun setFavorite(items: List<GalleryItem>, favorite: Boolean, onFinished: (Boolean) -> Unit = {}) {

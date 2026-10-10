@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -47,12 +49,12 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                     TypeFilter.VIDEOS -> item.isVideo
                 }
             }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Images in the sticker folder, newest first. */
     val stickers: StateFlow<List<GalleryItem>> =
         all.map { list -> list.filter { !it.isVideo && AlbumOps.isStickers(it.relativePath) } }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+            .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _trash = MutableStateFlow<List<GalleryItem>>(emptyList())
 
@@ -88,7 +90,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 latestMillis = Long.MAX_VALUE,
             )
             listOf(favorites) + (pending + real).sortedByDescending { it.latestMillis }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val albumFlows = HashMap<String, StateFlow<List<GalleryItem>>>()
 
@@ -99,7 +101,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             if (favorites) item.isFavorite else item.relativePath == key
         }
         all.map { list -> list.filter(belongs) }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, all.value.filter(belongs))
+            .flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, all.value.filter(belongs))
     }
 
     fun addEmptyAlbum(key: String) = saveEmpty(emptyAlbums.value + key)
@@ -127,17 +129,23 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             if (debounce) delay(400)
-            all.value = try {
-                repo.loadAll()
-            } catch (e: SecurityException) {
-                emptyList()
-            }
-            _loading.value = false
-            _trash.value = try {
-                repo.loadTrash()
+            val fresh = try {
+                repo.loadAllIncremental(all.value)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 emptyList()
             }
+            if (fresh != all.value) all.value = fresh
+            _loading.value = false
+            val trash = try {
+                repo.loadTrash()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
+            }
+            if (trash != _trash.value) _trash.value = trash
             if (!observing) {
                 getApplication<Application>().contentResolver
                     .registerContentObserver(repo.collection, true, observer)

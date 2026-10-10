@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.tim.gallery.data.GalleryItem
 import com.tim.gallery.ui.MediaActions
+import com.tim.gallery.ui.UndoCenter
 import com.tim.gallery.ui.itemCount
 import kotlinx.coroutines.launch
 
@@ -80,12 +81,16 @@ fun MoveToPersonalDialog(
             actions.deleteForever(added.map { it.first }) { ok ->
                 waitingForDelete = false
                 if (ok) {
-                    Toast.makeText(
-                        context,
+                    val ids = added.map { it.second }
+                    UndoCenter.post(
                         "Moved ${itemCount(added.size)} to your personal folder" +
                             if (failed > 0) " ($failed couldn't be moved)" else "",
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    ) { a ->
+                        Vault.restoreInBackground(ids) { n ->
+                            a.toast("Moved ${itemCount(n)} back to your gallery")
+                            a.refreshGallery()
+                        }
+                    }
                     onFinished(added.size)
                 } else {
                     // Keep things in one place only: undo the copies

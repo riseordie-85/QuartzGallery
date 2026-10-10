@@ -18,7 +18,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Smaller, faster release builds (unused code and resources removed)
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -253,6 +253,7 @@ fun AlbumScreen(
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var watermarking by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var hiding by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var copying by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -298,6 +299,7 @@ fun AlbumScreen(
                     onDelete = { actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() } },
                     onWatermark = { watermarking = selectedItems() },
                     onPersonal = { hiding = selectedItems() },
+                    onCopy = { copying = selectedItems() },
                 )
             } else {
                 TopAppBar(
@@ -401,6 +403,16 @@ fun AlbumScreen(
             },
         )
     }
+
+    MoveToAlbumFlow(
+        vm = vm,
+        actions = actions,
+        items = copying,
+        excludeKey = null,
+        onDismiss = { copying = null },
+        onMoved = { if (it > 0) selected = emptySet() },
+        copy = true,
+    )
 
     MoveToAlbumFlow(
         vm = vm,

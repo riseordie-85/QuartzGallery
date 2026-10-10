@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +55,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,8 +120,15 @@ fun MediaGrid(
         )
     },
 ) {
-    val sections = remember(items, groupByMonth) {
-        if (groupByMonth) buildSections(items) else listOf(Section("all", "", items))
+    // Grouping thousands of items by month happens in the background
+    val sections by produceState(
+        initialValue = remember { if (groupByMonth) buildSections(items) else listOf(Section("all", "", items)) },
+        items,
+        groupByMonth,
+    ) {
+        value = withContext(Dispatchers.Default) {
+            if (groupByMonth) buildSections(items) else listOf(Section("all", "", items))
+        }
     }
     val ids = remember(sections) { sections.flatMap { s -> s.items.map { it.id } } }
     val selecting = alwaysSelecting || selected.isNotEmpty()
@@ -269,6 +280,7 @@ fun SelectionTopBar(
     onDelete: () -> Unit,
     onWatermark: (() -> Unit)? = null,
     onPersonal: (() -> Unit)? = null,
+    onCopy: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
@@ -288,10 +300,20 @@ fun SelectionTopBar(
             IconButton(onClick = onShare) { Icon(Icons.Outlined.Share, contentDescription = "Share") }
             IconButton(onClick = onMove) { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, contentDescription = "Move to album") }
             IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = "Delete") }
-            if (onWatermark != null || onPersonal != null) {
+            if (onWatermark != null || onPersonal != null || onCopy != null) {
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (onCopy != null) {
+                            DropdownMenuItem(
+                                text = { Text("Copy to album") },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                                onClick = {
+                                    menuOpen = false
+                                    onCopy()
+                                },
+                            )
+                        }
                         if (onWatermark != null) {
                             DropdownMenuItem(
                                 text = { Text("Add watermark") },
@@ -331,32 +353,33 @@ fun MoveToAlbumFlow(
     excludeKey: String?,
     onDismiss: () -> Unit,
     onMoved: (Int) -> Unit = {},
+    copy: Boolean = false,
 ) {
     if (items == null) return
     val albums by vm.albums.collectAsStateWithLifecycle()
     var askingName by remember { mutableStateOf(false) }
 
+    fun go(key: String) {
+        onDismiss()
+        if (copy) actions.copy(items, key, onMoved) else actions.move(items, key, onFinished = onMoved)
+    }
+
     if (!askingName) {
         MoveToAlbumSheet(
             albums = albums.filter { it.key != excludeKey && !AlbumOps.isFavorites(it.key) },
             count = items.size,
+            verb = if (copy) "Copy" else "Move",
             onDismiss = onDismiss,
             onNewAlbum = { askingName = true },
-            onPick = { key ->
-                onDismiss()
-                actions.move(items, key, onMoved)
-            },
+            onPick = { key -> go(key) },
         )
     } else {
         AlbumNameDialog(
             title = "New album",
-            confirmLabel = "Create & move",
+            confirmLabel = if (copy) "Create & copy" else "Create & move",
             validate = { AlbumOps.validateName(it, AlbumOps.NEW_ALBUM_PARENT, albums) },
             onDismiss = onDismiss,
-            onConfirm = { name ->
-                onDismiss()
-                actions.move(items, AlbumOps.newAlbumPath(name), onMoved)
-            },
+            onConfirm = { name -> go(AlbumOps.newAlbumPath(name)) },
         )
     }
 }
@@ -366,13 +389,14 @@ fun MoveToAlbumFlow(
 private fun MoveToAlbumSheet(
     albums: List<Album>,
     count: Int,
+    verb: String,
     onDismiss: () -> Unit,
     onNewAlbum: () -> Unit,
     onPick: (String) -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
-            "Move ${itemCount(count)} to…",
+            "$verb ${itemCount(count)} to…",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )

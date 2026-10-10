@@ -405,6 +405,18 @@ object Vault {
         done.size
     }
 
+    /** Undo for "Move to personal folder": puts these items straight back (no passcode needed). */
+    fun restoreInBackground(ids: Collection<String>, onDone: (Int) -> Unit = {}) {
+        background.launch {
+            val n = runCatching {
+                val wanted = ids.toSet()
+                val items = withContext(Dispatchers.IO) { scanItems() }.filter { it.id in wanted }
+                restore(items) { _, _ -> }
+            }.getOrDefault(0)
+            withContext(Dispatchers.Main) { onDone(n) }
+        }
+    }
+
     private fun insertIntoGallery(v: VaultItem, relativePath: String, key: javax.crypto.SecretKey): Boolean {
         val resolver = app.contentResolver
         val collection = if (v.isVideo) {

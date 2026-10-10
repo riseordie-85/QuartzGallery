@@ -66,6 +66,79 @@ object AlbumOps {
         }
     }
 
+    /** Checks a new file name. Returns an error message, or null if it's fine. */
+    fun validateFileName(stem: String): String? {
+        val n = stem.trim()
+        return when {
+            n.isEmpty() -> "Enter a name"
+            n.length > 120 -> "That name is too long"
+            ILLEGAL.containsMatchIn(n) -> "Names can't contain \\ / : * ? \" < > |"
+            n.startsWith(".") -> "Names can't start with a period"
+            else -> null
+        }
+    }
+
+    /** Renames one file. The caller must already have write access. */
+    suspend fun rename(context: Context, item: GalleryItem, newName: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val values = ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, newName) }
+            context.contentResolver.update(item.uri, values, null, null) > 0
+        } catch (e: Exception) {
+            Log.w("AlbumOps", "Couldn't rename ${item.name}", e)
+            false
+        }
+    }
+
+    /**
+     * Copies items into the folder [targetPath] as new files (same name and date; Android adds
+     * a number if the name is taken). Returns the new files' uris.
+     */
+    suspend fun copy(context: Context, items: List<GalleryItem>, targetPath: String): List<android.net.Uri> =
+        withContext(Dispatchers.IO) {
+            val resolver = context.contentResolver
+            val out = mutableListOf<android.net.Uri>()
+            for (item in items) {
+                val collection = if (item.isVideo) {
+                    MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                } else {
+                    MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                }
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, item.name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, targetPath)
+                    put(MediaStore.MediaColumns.DATE_TAKEN, item.dateMillis)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val uri = try {
+                    resolver.insert(collection, values)
+                } catch (e: Exception) {
+                    Log.w("AlbumOps", "Couldn't create a copy of ${item.name} in $targetPath", e)
+                    null
+                } ?: continue
+                try {
+                    var copied = 0L
+                    resolver.openInputStream(item.uri)?.use { input ->
+                        resolver.openOutputStream(uri, "w")?.use { output -> copied = input.copyTo(output) }
+                    }
+                    if (item.sizeBytes > 0 && copied != item.sizeBytes) throw java.io.IOException("Incomplete copy")
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    out += uri
+                } catch (e: Exception) {
+                    Log.w("AlbumOps", "Copying ${item.name} failed", e)
+                    runCatching { resolver.delete(uri, null, null) }
+                }
+            }
+            out
+        }
+
+    /** Deletes files this app created (no confirmation needed for those). */
+    suspend fun deleteOwn(context: Context, uris: List<android.net.Uri>) = withContext(Dispatchers.IO) {
+        uris.forEach { runCatching { context.contentResolver.delete(it, null, null) } }
+    }
+
     /**
      * Moves items into the folder [targetPath]. The caller must already have write access
      * (MediaStore.createWriteRequest). Returns how many were moved.

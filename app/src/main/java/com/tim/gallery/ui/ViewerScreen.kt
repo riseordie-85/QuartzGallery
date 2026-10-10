@@ -22,6 +22,12 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.produceState
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Lock
 import com.tim.gallery.personal.MoveToPersonalDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -86,6 +92,7 @@ fun ViewerScreen(
     onPlay: (Long) -> Unit,
     onEdit: (Long) -> Unit,
     onOpenPersonal: () -> Unit,
+    onShowOnMap: (Double, Double) -> Unit = { _, _ -> },
 ) {
     SystemBarIcons(darkBackground = true)
     val inTrash = albumKey == AlbumOps.TRASH_KEY
@@ -114,6 +121,8 @@ fun ViewerScreen(
     var wallpaperFor by remember { mutableStateOf<GalleryItem?>(null) }
     var stickerFrom by remember { mutableStateOf<GalleryItem?>(null) }
     var hiding by remember { mutableStateOf<GalleryItem?>(null) }
+    var copying by remember { mutableStateOf<List<GalleryItem>?>(null) }
+    var renaming by remember { mutableStateOf<GalleryItem?>(null) }
     var confirmDeleteForever by remember { mutableStateOf<GalleryItem?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -217,6 +226,22 @@ fun ViewerScreen(
                                     )
                                 }
                                 DropdownMenuItem(
+                                    text = { Text("Copy to album") },
+                                    leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        copying = listOf(current)
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Rename") },
+                                    leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
+                                    onClick = {
+                                        menuOpen = false
+                                        renaming = current
+                                    },
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Move to personal folder") },
                                     leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
                                     onClick = {
@@ -277,7 +302,40 @@ fun ViewerScreen(
         onDismiss = { moving = null },
     )
 
-    infoFor?.let { item -> InfoDialog(item) { infoFor = null } }
+    infoFor?.let { item ->
+        InfoDialog(
+            item = item,
+            onDismiss = { infoFor = null },
+            onShowOnMap = { lat, lon ->
+                infoFor = null
+                onShowOnMap(lat, lon)
+            },
+        )
+    }
+
+    if (!inTrash) MoveToAlbumFlow(
+        vm = vm,
+        actions = actions,
+        items = copying,
+        excludeKey = null,
+        onDismiss = { copying = null },
+        copy = true,
+    )
+
+    renaming?.let { item ->
+        AlbumNameDialog(
+            title = "Rename",
+            confirmLabel = "Rename",
+            initial = item.name.substringBeforeLast('.', item.name),
+            note = item.name.substringAfterLast('.', "").takeIf { it.isNotEmpty() }?.let { "The .$it ending is kept." },
+            validate = { AlbumOps.validateFileName(it) },
+            onDismiss = { renaming = null },
+            onConfirm = { stem ->
+                renaming = null
+                actions.rename(item, stem)
+            },
+        )
+    }
 
     hiding?.let { item ->
         MoveToPersonalDialog(
@@ -396,22 +454,59 @@ private fun ActionButton(icon: ImageVector, label: String, onClick: () -> Unit) 
 }
 
 @Composable
-private fun InfoDialog(item: GalleryItem, onDismiss: () -> Unit) {
+private fun InfoDialog(item: GalleryItem, onDismiss: () -> Unit, onShowOnMap: (Double, Double) -> Unit) {
     val context = LocalContext.current
+    val details by produceState<com.tim.gallery.data.MediaDetails?>(null, item.id) {
+        value = com.tim.gallery.data.Metadata.read(context, item)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
         title = { Text("Details") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
                 InfoRow("Name", item.name)
                 InfoRow("Date", formatDate(item.dateMillis))
                 InfoRow("Album", item.album)
                 InfoRow("Folder", item.relativePath.trimEnd('/'))
-                if (item.width > 0 && item.height > 0) InfoRow("Resolution", "${item.width} × ${item.height}")
+                if (item.width > 0 && item.height > 0) {
+                    val mp = item.width.toLong() * item.height / 1_000_000.0
+                    InfoRow(
+                        "Resolution",
+                        "${item.width} × ${item.height}" +
+                            if (!item.isVideo && mp >= 0.1) String.format(java.util.Locale.US, "  ·  %.1f MP", mp) else "",
+                    )
+                }
                 if (item.isVideo) InfoRow("Length", formatDuration(item.durationMs))
                 InfoRow("Size", Formatter.formatShortFileSize(context, item.sizeBytes))
                 InfoRow("Type", item.mimeType)
+                val d = details
+                if (d == null) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+                } else {
+                    d.camera?.let { InfoRow("Camera", it) }
+                    d.lens?.let { InfoRow("Lens", it) }
+                    listOfNotNull(d.aperture, d.shutter, d.iso).takeIf { it.isNotEmpty() }?.let {
+                        InfoRow("Exposure", it.joinToString("  ·  "))
+                    }
+                    d.focalLength?.let { InfoRow("Focal length", it) }
+                    d.flash?.let { InfoRow("Flash", it) }
+                    d.frameRate?.let { InfoRow("Frame rate", it) }
+                    d.bitrate?.let { InfoRow("Bitrate", it) }
+                    d.hdr?.let { InfoRow("Dynamic range", it) }
+                    d.codec?.let { InfoRow("Video format", it) }
+                    if (d.latitude != null && d.longitude != null) {
+                        InfoRow(
+                            "Location",
+                            String.format(java.util.Locale.US, "%.5f, %.5f", d.latitude, d.longitude) +
+                                (d.altitude?.let { "  ·  $it" } ?: ""),
+                        )
+                        TextButton(onClick = { onShowOnMap(d.latitude, d.longitude) }) { Text("Show on map") }
+                    }
+                }
             }
         },
     )
