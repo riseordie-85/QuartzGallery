@@ -11,6 +11,11 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -408,154 +413,182 @@ fun EditorScreen(
             }
         }
 
-        // ---------------------------------------------------- picture
-        Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            when {
-                loadFailed -> Text(
-                    "Couldn't open this photo for editing.",
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-                session.preview == null -> CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
-                tool == Tool.CROP -> CropView(
-                    session = session,
-                    state = state,
-                    straightening = straightening,
-                    onCropChange = { update(state.copy(geometry = state.geometry.copy(crop = it)), "crop") },
-                    onGestureEnd = { history.endGesture() },
-                )
-                else -> OutputView(
-                    session = session,
-                    state = if (comparing) state.withoutColor() else state,
-                    markup = tool == Tool.MARKUP,
-                    selectedId = if (tool == Tool.MARKUP) selectedLayer else null,
-                    onSelect = { selectedLayer = it },
-                    onLayerChange = { changed ->
-                        update(state.copy(layers = state.layers.map { if (it.id == changed.id) changed else it }), "layer-${changed.id}")
-                    },
-                    onGestureEnd = { history.endGesture() },
-                    onEditText = { textEditing = it },
-                    onDelete = { id ->
-                        update(state.copy(layers = state.layers.filterNot { it.id == id }))
-                        selectedLayer = null
-                    },
-                )
-            }
-
-            // Hold to see the photo without color changes
-            if (session.preview != null && (tool == Tool.ADJUST || tool == Tool.FILTERS) &&
-                (state.adjust.isNotEmpty() || state.filter != FilterPreset.NONE)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                awaitFirstDown()
-                                comparing = true
-                                waitForUpOrCancellation()
-                                comparing = false
-                            }
+        val pictureArea: @Composable (Modifier) -> Unit = { m ->
+            // ---------------------------------------------------- picture
+            Box(m.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                when {
+                    loadFailed -> Text(
+                        "Couldn't open this photo for editing.",
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                    session.preview == null -> CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+                    tool == Tool.CROP -> CropView(
+                        session = session,
+                        state = state,
+                        straightening = straightening,
+                        onCropChange = { update(state.copy(geometry = state.geometry.copy(crop = it)), "crop") },
+                        onGestureEnd = { history.endGesture() },
+                    )
+                    else -> OutputView(
+                        session = session,
+                        state = if (comparing) state.withoutColor() else state,
+                        markup = tool == Tool.MARKUP,
+                        selectedId = if (tool == Tool.MARKUP) selectedLayer else null,
+                        onSelect = { selectedLayer = it },
+                        onLayerChange = { changed ->
+                            update(state.copy(layers = state.layers.map { if (it.id == changed.id) changed else it }), "layer-${changed.id}")
                         },
-                ) {
-                    Icon(Icons.Outlined.Compare, contentDescription = "Hold to compare", tint = Color.White)
-                }
-            }
-        }
-
-        // ---------------------------------------------------- tool panel
-        Box(Modifier.fillMaxWidth().heightIn(min = 150.dp).padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
-            if (session.preview != null) {
-                when (tool) {
-                    Tool.CROP -> CropPanel(
-                        state = state,
-                        onGeometry = { g, tag -> update(state.copy(geometry = g), tag) },
-                        onDone = { history.endGesture() },
-                        onStraightening = { straightening = it },
-                        w = session.fullW,
-                        h = session.fullH,
-                        colors = colorTools,
-                    )
-                    Tool.ADJUST -> AdjustPanel(state, onChange = { s, tag -> update(s, tag) }, onDone = { history.endGesture() })
-                    Tool.FILTERS -> FiltersPanel(
-                        session,
-                        state,
-                        onChange = { s, tag -> update(s, tag) },
-                        onDone = { history.endGesture() },
-                        colors = colorTools,
-                    )
-                    Tool.CUTOUT -> CutoutPanel(
-                        state = state,
-                        hasForeground = session.foreground != null,
-                        busy = cutoutBusy,
-                        error = cutoutError,
-                        onRemoveBackground = { removeBackground() },
-                        onChange = { update(it) },
-                        onSaveSticker = { saveCutoutAsSticker() },
-                        colors = colorTools,
-                    )
-                    Tool.MARKUP -> MarkupPanel(
-                        selected = selected,
-                        onAddText = { addingText = true },
-                        onAddSticker = { stickerSheet = true },
-                        onAddEmoji = { emojiSheet = true },
-                        onAddShape = { shapeSheet = true },
-                        onAddWatermark = { watermarkSheet = true },
+                        onGestureEnd = { history.endGesture() },
                         onEditText = { textEditing = it },
-                        onChange = { layer, tag -> update(history.state.updateLayer(layer.id) { layer }, tag) },
-                        onDone = { history.endGesture() },
-                        onAlign = { layer, anchor ->
-                            val (cx, cy) = anchorPosition(layer, anchor, 0.04f, outSize(), session)
-                            update(history.state.updateLayer(layer.id) { it.moved(cx, cy, it.scale, it.rotation) })
-                        },
-                        onBringToFront = { layer ->
-                            update(state.copy(layers = state.layers.filterNot { it.id == layer.id } + layer))
-                        },
-                        onDuplicate = { layer ->
-                            val copy = layer.withId(newLayerId()).moved(
-                                (layer.cx + 0.05f).coerceAtMost(1f),
-                                (layer.cy + 0.05f).coerceAtMost(1f),
-                                layer.scale,
-                                layer.rotation,
-                            )
-                            addLayer(copy)
-                        },
-                        onDelete = { layer ->
-                            update(state.copy(layers = state.layers.filterNot { it.id == layer.id }))
+                        onDelete = { id ->
+                            update(state.copy(layers = state.layers.filterNot { it.id == id }))
                             selectedLayer = null
                         },
-                        onDeselect = { selectedLayer = null },
-                        colors = colorTools,
                     )
+                }
+
+                // Hold to see the photo without color changes
+                if (session.preview != null && (tool == Tool.ADJUST || tool == Tool.FILTERS) &&
+                    (state.adjust.isNotEmpty() || state.filter != FilterPreset.NONE)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .pointerInput(Unit) {
+                                awaitEachGesture {
+                                    awaitFirstDown()
+                                    comparing = true
+                                    waitForUpOrCancellation()
+                                    comparing = false
+                                }
+                            },
+                    ) {
+                        Icon(Icons.Outlined.Compare, contentDescription = "Hold to compare", tint = Color.White)
+                    }
+                }
+            }
+        }
+        val toolPanel: @Composable () -> Unit = {
+            // ---------------------------------------------------- tool panel
+            Box(Modifier.fillMaxWidth().heightIn(min = 150.dp).padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+                if (session.preview != null) {
+                    when (tool) {
+                        Tool.CROP -> CropPanel(
+                            state = state,
+                            onGeometry = { g, tag -> update(state.copy(geometry = g), tag) },
+                            onDone = { history.endGesture() },
+                            onStraightening = { straightening = it },
+                            w = session.fullW,
+                            h = session.fullH,
+                            colors = colorTools,
+                        )
+                        Tool.ADJUST -> AdjustPanel(state, onChange = { s, tag -> update(s, tag) }, onDone = { history.endGesture() })
+                        Tool.FILTERS -> FiltersPanel(
+                            session,
+                            state,
+                            onChange = { s, tag -> update(s, tag) },
+                            onDone = { history.endGesture() },
+                            colors = colorTools,
+                        )
+                        Tool.CUTOUT -> CutoutPanel(
+                            state = state,
+                            hasForeground = session.foreground != null,
+                            busy = cutoutBusy,
+                            error = cutoutError,
+                            onRemoveBackground = { removeBackground() },
+                            onChange = { update(it) },
+                            onSaveSticker = { saveCutoutAsSticker() },
+                            colors = colorTools,
+                        )
+                        Tool.MARKUP -> MarkupPanel(
+                            selected = selected,
+                            onAddText = { addingText = true },
+                            onAddSticker = { stickerSheet = true },
+                            onAddEmoji = { emojiSheet = true },
+                            onAddShape = { shapeSheet = true },
+                            onAddWatermark = { watermarkSheet = true },
+                            onEditText = { textEditing = it },
+                            onChange = { layer, tag -> update(history.state.updateLayer(layer.id) { layer }, tag) },
+                            onDone = { history.endGesture() },
+                            onAlign = { layer, anchor ->
+                                val (cx, cy) = anchorPosition(layer, anchor, 0.04f, outSize(), session)
+                                update(history.state.updateLayer(layer.id) { it.moved(cx, cy, it.scale, it.rotation) })
+                            },
+                            onBringToFront = { layer ->
+                                update(state.copy(layers = state.layers.filterNot { it.id == layer.id } + layer))
+                            },
+                            onDuplicate = { layer ->
+                                val copy = layer.withId(newLayerId()).moved(
+                                    (layer.cx + 0.05f).coerceAtMost(1f),
+                                    (layer.cy + 0.05f).coerceAtMost(1f),
+                                    layer.scale,
+                                    layer.rotation,
+                                )
+                                addLayer(copy)
+                            },
+                            onDelete = { layer ->
+                                update(state.copy(layers = state.layers.filterNot { it.id == layer.id }))
+                                selectedLayer = null
+                            },
+                            onDeselect = { selectedLayer = null },
+                            colors = colorTools,
+                        )
+                    }
+                }
+            }
+        }
+        val toolTabs: @Composable () -> Unit = {
+            // ---------------------------------------------------- tool tabs
+            Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Tool.entries.forEach { t ->
+                    val active = t == tool
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (active) Color.White.copy(alpha = 0.14f) else Color.Transparent)
+                            .clickable {
+                                tool = t
+                                if (t != Tool.MARKUP) selectedLayer = null
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Icon(t.icon, contentDescription = t.label, tint = if (active) Color.White else Color.White.copy(alpha = 0.6f))
+                        Text(
+                            t.label,
+                            color = if (active) Color.White else Color.White.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
             }
         }
 
-        // ---------------------------------------------------- tool tabs
-        Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            Tool.entries.forEach { t ->
-                val active = t == tool
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (active) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-                        .clickable {
-                            tool = t
-                            if (t != Tool.MARKUP) selectedLayer = null
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Icon(t.icon, contentDescription = t.label, tint = if (active) Color.White else Color.White.copy(alpha = 0.6f))
-                    Text(
-                        t.label,
-                        color = if (active) Color.White else Color.White.copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+        // Wide screens (tablets, unfolded Fold in landscape): tools beside the picture
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            if (maxWidth > maxHeight && maxWidth >= 600.dp) {
+                Row(Modifier.fillMaxSize()) {
+                    pictureArea(Modifier.weight(1f).fillMaxHeight())
+                    Column(
+                        Modifier
+                            .width(380.dp)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        toolTabs()
+                        toolPanel()
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize()) {
+                    pictureArea(Modifier.weight(1f).fillMaxWidth())
+                    toolPanel()
+                    toolTabs()
                 }
             }
         }

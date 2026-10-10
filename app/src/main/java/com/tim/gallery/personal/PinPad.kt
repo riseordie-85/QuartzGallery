@@ -29,7 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
 
 /**
  * Six dots and a number pad. Calls [onComplete] once six digits are in, then clears itself.
@@ -134,6 +134,7 @@ private fun Key(label: String, onClick: () -> Unit) {
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick),
     ) {
-        Text(label, fontSize = 28.sp, style = MaterialTheme.typography.headlineMedium)
+        // Sized in dp so very large system text can't overflow the key
+        Text(label, fontSize = with(LocalDensity.current) { 28.dp.toSp() }, style = MaterialTheme.typography.headlineMedium)
     }
 }
