@@ -45,6 +45,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,6 +75,8 @@ import com.tim.gallery.ui.rememberMediaActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.tim.gallery.video.GifDecoder
+import java.util.concurrent.atomic.AtomicBoolean
 
 private enum class Tool(val label: String, val icon: ImageVector) {
     CROP("Crop", Icons.Outlined.Crop),
@@ -113,6 +116,12 @@ fun EditorScreen(
     var confirmOverwrite by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
 
+    // GIFs: every frame gets the edit and it's saved as a GIF again
+    var gif by remember { mutableStateOf<GifDecoder?>(null) }
+    var animatedWebp by remember { mutableStateOf(false) }
+    var gifProgress by remember { mutableStateOf<Float?>(null) }
+    val gifCancel = remember { AtomicBoolean(false) }
+
     var cutoutBusy by remember { mutableStateOf(false) }
     var cutoutError by remember { mutableStateOf<String?>(null) }
 
@@ -137,6 +146,11 @@ fun EditorScreen(
 
     // ---- load the photo
     LaunchedEffect(item.id) {
+        if (GifEdit.isGif(item.mimeType, item.name)) {
+            gif = GifEdit.open(context, item.uri)
+        } else if (item.mimeType.lowercase() == "image/webp") {
+            animatedWebp = withContext(Dispatchers.IO) { isAnimatedWebp(context, item.uri) }
+        }
         val base = withContext(Dispatchers.IO) {
             runCatching { MediaSaver.decodeUpright(context, item.uri, 4096) }.getOrNull()
         }
@@ -241,10 +255,8 @@ fun EditorScreen(
         }
     }
 
-    suspend fun render(): Bitmap? {
-        val src = session.source ?: return null
-        val snapshot = history.state
-        // Give fonts that are still downloading (or failed earlier) one more try
+    /** Gives fonts that are still downloading (or failed earlier) one more try. */
+    suspend fun retryFonts(snapshot: EditState) {
         val missing = snapshot.layers.filterIsInstance<TextLayer>().map { it.fontKey }.distinct()
             .filter { Fonts.cached(it) == null }
             .filter { Fonts.load(context, it) == null }
@@ -255,10 +267,83 @@ fun EditorScreen(
                 Toast.LENGTH_LONG,
             ).show()
         }
+    }
+
+    /** The GIF being edited, when the edit can be saved as a GIF (background removal can't). */
+    val gifSave: GifDecoder? = gif?.takeIf { state.cutout == CutoutMode.OFF }
+
+    /** Applies the edit to every frame. Null if cancelled or it failed (the person is told). */
+    suspend fun renderGif(source: GifDecoder): java.io.File? {
+        val base = session.base ?: return null
+        val snapshot = history.state
+        retryFonts(snapshot)
+        gifCancel.set(false)
+        gifProgress = 0f
+        return try {
+            GifEdit.render(context, source, snapshot, session, base.width, base.height, gifCancel) { p ->
+                scope.launch { if (gifProgress != null) gifProgress = p }
+            }
+        } catch (e: GifEdit.Cancelled) {
+            null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Toast.makeText(context, "Couldn't save the GIF" + if (e is OutOfMemoryError) " — it's too big for this phone." else ".", Toast.LENGTH_LONG).show()
+            null
+        } finally {
+            gifProgress = null
+        }
+    }
+
+    suspend fun render(): Bitmap? {
+        val src = session.source ?: return null
+        val snapshot = history.state
+        retryFonts(snapshot)
         return onGpu { EditRenderer.export(snapshot, src, session) }
     }
 
+    fun saveGifCopy(source: GifDecoder) {
+        saving = true
+        scope.launch {
+            val file = renderGif(source)
+            val stem = item.name.substringBeforeLast('.').ifBlank { "animation" }
+            val uri = file?.let { f ->
+                try {
+                    MediaSaver.saveFile(
+                        context = context,
+                        file = f,
+                        displayName = "${stem}_edit_${System.currentTimeMillis()}.gif",
+                        mime = "image/gif",
+                        relativePath = item.relativePath,
+                        dateTaken = item.dateMillis,
+                    )
+                } finally {
+                    f.delete()
+                }
+            }
+            saving = false
+            if (file == null) return@launch // cancelled or already explained
+            Toast.makeText(
+                context,
+                if (uri != null) "Saved a copy next to the original" else "Couldn't save the GIF",
+                Toast.LENGTH_SHORT,
+            ).show()
+            if (uri != null) {
+                EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
+                vm.refresh()
+                onClose()
+            }
+        }
+    }
+
     fun saveCopy() {
+        gifSave?.let {
+            saveGifCopy(it)
+            return
+        }
+        if (gif != null && (gif?.frameCount ?: 0) > 1) {
+            Toast.makeText(context, "Background removal works on a single picture, so this is saved as a still.", Toast.LENGTH_LONG).show()
+        }
         saving = true
         scope.launch {
             val bmp = render()
@@ -297,6 +382,36 @@ fun EditorScreen(
     /** "Edit again": replaces the edited copy's picture and remembers the new edit. */
     fun updateCopy() {
         val target = editingCopy ?: return
+        val source = gifSave
+        if (source != null) {
+            if (!GifEdit.isGif(target.mimeType, target.name)) {
+                Toast.makeText(context, "Saved as a new GIF copy so it keeps its animation.", Toast.LENGTH_LONG).show()
+                saveGifCopy(source)
+                return
+            }
+            saving = true
+            actions.withWriteAccess(listOf(target)) { granted ->
+                if (!granted) {
+                    saving = false
+                    return@withWriteAccess
+                }
+                val file = renderGif(source)
+                val ok = file != null && try {
+                    MediaSaver.overwriteWithFile(context, target.uri, file)
+                } finally {
+                    file.delete()
+                }
+                saving = false
+                if (file == null) return@withWriteAccess
+                Toast.makeText(context, if (ok) "Edit updated" else "Couldn't save the GIF", Toast.LENGTH_SHORT).show()
+                if (ok) {
+                    EditRecipes.save(context, target.id, EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
+                    vm.refresh()
+                    onClose()
+                }
+            }
+            return
+        }
         if (state.needsAlpha && target.mimeType.lowercase() != "image/png") {
             Toast.makeText(context, "This edit has transparency, so it's saved as a new PNG copy.", Toast.LENGTH_LONG).show()
             saveCopy()
@@ -321,6 +436,9 @@ fun EditorScreen(
     }
 
     val overwriteBlocker: String? = when {
+        gif != null && state.cutout != CutoutMode.OFF ->
+            "Background removal can't be saved into a GIF. Save a copy instead (it'll be a still picture)."
+        gif != null -> null
         !MediaSaver.canOverwrite(item.mimeType) -> "This file type can only be saved as a copy."
         state.needsAlpha && item.mimeType.lowercase() == "image/jpeg" ->
             "JPEG can't hold transparency. Save a copy instead (it'll be a PNG)."
@@ -329,13 +447,27 @@ fun EditorScreen(
 
     fun overwrite() {
         saving = true
+        val source = gifSave
         actions.withWriteAccess(listOf(item)) { granted ->
             if (!granted) {
                 saving = false
                 return@withWriteAccess
             }
-            val bmp = render()
-            val ok = bmp != null && MediaSaver.overwrite(context, item.uri, bmp, MediaSaver.formatFor(item.mimeType))
+            val ok = if (source != null) {
+                val file = renderGif(source)
+                if (file == null) {
+                    saving = false
+                    return@withWriteAccess
+                }
+                try {
+                    MediaSaver.overwriteWithFile(context, item.uri, file)
+                } finally {
+                    file.delete()
+                }
+            } else {
+                val bmp = render()
+                bmp != null && MediaSaver.overwrite(context, item.uri, bmp, MediaSaver.formatFor(item.mimeType))
+            }
             saving = false
             Toast.makeText(context, if (ok) "Original replaced" else "Couldn't save the photo", Toast.LENGTH_SHORT).show()
             if (ok) {
@@ -474,6 +606,24 @@ fun EditorScreen(
             }
         }
         val toolPanel: @Composable () -> Unit = {
+            // GIFs: say what will happen to the animation
+            val frames = gif?.frameCount ?: 0
+            val note = when {
+                session.preview == null -> null
+                frames > 1 && state.cutout != CutoutMode.OFF -> "Background removal saves a still picture"
+                frames > 1 -> "GIF · edits apply to all $frames frames"
+                animatedWebp -> "Animated WebP · edits save a still picture"
+                else -> null
+            }
+            if (note != null) {
+                Text(
+                    note,
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+            }
             // ---------------------------------------------------- tool panel
             Box(Modifier.fillMaxWidth().heightIn(min = 150.dp).padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
                 if (session.preview != null) {
@@ -693,6 +843,28 @@ fun EditorScreen(
         )
     }
 
+    gifProgress?.let { p ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Saving GIF") },
+            text = {
+                Column {
+                    LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+                    val total = gif?.frameCount ?: 0
+                    if (total > 0) {
+                        Text(
+                            "Frame ${(p * total).toInt().coerceIn(0, total)} of $total",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { gifCancel.set(true) }) { Text("Cancel") } },
+        )
+    }
+
     if (confirmOverwrite) {
         AlertDialog(
             onDismissRequest = { confirmOverwrite = false },
@@ -743,3 +915,20 @@ private class ColorRequest(
     val allowAlpha: Boolean,
     val apply: (EditState, Int) -> EditState,
 )
+
+/** True for WebP files that hold an animation (Android can't write those back). */
+private fun isAnimatedWebp(context: android.content.Context, uri: android.net.Uri): Boolean = runCatching {
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        val head = ByteArray(21)
+        var n = 0
+        while (n < head.size) {
+            val r = input.read(head, n, head.size - n)
+            if (r <= 0) break
+            n += r
+        }
+        n == head.size && String(head, 0, 4, Charsets.ISO_8859_1) == "RIFF" &&
+            String(head, 8, 4, Charsets.ISO_8859_1) == "WEBP" &&
+            String(head, 12, 4, Charsets.ISO_8859_1) == "VP8X" &&
+            (head[20].toInt() and 0x02) != 0
+    } ?: false
+}.getOrDefault(false)

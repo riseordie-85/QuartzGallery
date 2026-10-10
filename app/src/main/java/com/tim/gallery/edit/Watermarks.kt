@@ -806,13 +806,36 @@ private suspend fun watermarkOne(context: Context, item: GalleryItem, preset: Wa
     val assets = MapAssets(if (preset.logo != null && logo != null) mapOf(preset.logo to logo) else emptyMap())
     val out = FSize(src.width.toFloat(), src.height.toFloat())
     val state = EditState(layers = listOf(preset.toLayer(1L, out, assets)))
+    val stem = item.name.substringBeforeLast('.').ifBlank { "photo" }
+    // GIFs keep their animation: the watermark goes on every frame
+    if (GifEdit.isGif(item.mimeType, item.name)) {
+        val gif = GifEdit.open(context, item.uri)
+        if (gif != null) {
+            val file = runCatching { GifEdit.render(context, gif, state, assets, src.width, src.height) }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()
+            src.recycle()
+            file ?: return false
+            return try {
+                MediaSaver.saveFile(
+                    context = context,
+                    file = file,
+                    displayName = "${stem}_wm_${System.currentTimeMillis() % 100000}.gif",
+                    mime = "image/gif",
+                    relativePath = item.relativePath,
+                    dateTaken = item.dateMillis,
+                ) != null
+            } finally {
+                file.delete()
+            }
+        }
+    }
     val result = onGpu { EditRenderer.export(state, src, assets) } ?: return false
     val format = when (item.mimeType.lowercase()) {
         "image/png" -> Bitmap.CompressFormat.PNG
         "image/webp" -> Bitmap.CompressFormat.WEBP_LOSSY
         else -> Bitmap.CompressFormat.JPEG
     }
-    val stem = item.name.substringBeforeLast('.').ifBlank { "photo" }
     val uri = MediaSaver.saveBitmap(
         context = context,
         bitmap = result,

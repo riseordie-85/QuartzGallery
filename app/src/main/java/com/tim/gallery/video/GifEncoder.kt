@@ -11,10 +11,14 @@ class GifEncoder(
     private val out: OutputStream,
     private val width: Int,
     private val height: Int,
-    /** Delay between frames, in milliseconds. */
-    delayMs: Int,
+    /** Delay between frames, in milliseconds (each frame can override it). */
+    private val delayMs: Int,
+    /**
+     * Keep see-through pixels (alpha below half) see-through. Every frame is then cleared
+     * before the next one is drawn, so see-through areas don't show older frames.
+     */
+    private val keepTransparency: Boolean = false,
 ) {
-    private val delayCs = (delayMs / 10).coerceAtLeast(2)
     private var started = false
 
     private fun write16(v: Int) {
@@ -37,22 +41,27 @@ class GifEncoder(
     }
 
     /** Adds one frame. [bitmap] must be [width] × [height]. */
-    fun addFrame(bitmap: Bitmap) {
+    fun addFrame(bitmap: Bitmap, frameDelayMs: Int = delayMs) {
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        addFrame(pixels)
+        addFrame(pixels, frameDelayMs)
     }
 
     /** Adds one frame from ARGB pixels (row by row, [width] × [height]). */
-    fun addFrame(pixels: IntArray) {
+    fun addFrame(pixels: IntArray, frameDelayMs: Int = delayMs) {
         if (!started) start()
-        val palette = medianCut(pixels, 256)
-        val indices = ditherToPalette(pixels, palette)
+        // When keeping transparency, the see-through slot is always declared (even on frames
+        // without see-through pixels) so every viewer clears frames to see-through, not a color
+        val seeThrough = keepTransparency
+        // One palette slot is kept free for "see-through"
+        val palette = medianCut(pixels, if (seeThrough) 255 else 256, seeThrough)
+        val indices = ditherToPalette(pixels, palette, if (seeThrough) TRANSPARENT_INDEX else -1)
 
-        // Graphic control extension: delay, "leave in place"
-        out.write(byteArrayOf(0x21, 0xF9.toByte(), 0x04, 0x04))
-        write16(delayCs)
-        out.write(0)
+        // Graphic control extension: delay, what happens before the next frame, see-through color
+        val disposal = if (keepTransparency) 2 else 1 // 2 = clear, 1 = leave in place
+        out.write(byteArrayOf(0x21, 0xF9.toByte(), 0x04, ((disposal shl 2) or (if (seeThrough) 1 else 0)).toByte()))
+        write16((frameDelayMs / 10).coerceAtLeast(2))
+        out.write(if (seeThrough) TRANSPARENT_INDEX else 0)
         out.write(0)
         // Image descriptor with a 256-entry local color table
         out.write(0x2C)
@@ -77,47 +86,64 @@ class GifEncoder(
         out.flush()
     }
 
+    private companion object {
+        const val TRANSPARENT_INDEX = 255
+    }
+
     // ------------------------------------------------------------ color reduction
 
-    private fun medianCut(pixels: IntArray, maxColors: Int): IntArray {
+    private fun medianCut(pixels: IntArray, maxColors: Int, skipSeeThrough: Boolean = false): IntArray {
         val step = maxOf(1, pixels.size / 40_000)
-        val samples = IntArray((pixels.size + step - 1) / step) { pixels[it * step] and 0xFFFFFF }
-        val boxes = ArrayList<IntArray>()
-        boxes += samples
-        while (boxes.size < maxColors) {
-            // Split the box with the widest color range (weighted by how many pixels it holds)
-            var best = -1
-            var bestScore = 0L
-            var bestChannel = 0
-            for ((i, box) in boxes.withIndex()) {
-                if (box.size < 2) continue
+        var samples = IntArray((pixels.size + step - 1) / step) { pixels[it * step] }
+        if (skipSeeThrough) samples = samples.filter { (it ushr 24) >= 128 }.toIntArray()
+        for (i in samples.indices) samples[i] = samples[i] and 0xFFFFFF
+        // Each box remembers its widest channel and score, so a split only measures the two new halves
+        class Box(val colors: IntArray) {
+            val channel: Int
+            val score: Long
+
+            init {
                 var rMin = 255; var rMax = 0; var gMin = 255; var gMax = 0; var bMin = 255; var bMax = 0
-                for (c in box) {
+                for (c in colors) {
                     val r = (c shr 16) and 0xFF; val g = (c shr 8) and 0xFF; val b = c and 0xFF
                     if (r < rMin) rMin = r; if (r > rMax) rMax = r
                     if (g < gMin) gMin = g; if (g > gMax) gMax = g
                     if (b < bMin) bMin = b; if (b > bMax) bMax = b
                 }
                 val rr = rMax - rMin; val gr = gMax - gMin; val br = bMax - bMin
-                val range = maxOf(rr, gr, br)
-                if (range == 0) continue
-                val score = range.toLong() * box.size
-                if (score > bestScore) {
-                    bestScore = score
+                val range = maxOf(rr, gr, br, 0)
+                // Weighted by how many pixels it holds; boxes that can't split score 0
+                score = if (colors.size < 2 || range == 0) 0L else range.toLong() * colors.size
+                channel = if (rr >= gr && rr >= br) 16 else if (gr >= br) 8 else 0
+            }
+        }
+        val boxes = ArrayList<Box>()
+        boxes += Box(samples)
+        while (boxes.size < maxColors) {
+            var best = -1
+            var bestScore = 0L
+            for (i in boxes.indices) {
+                if (boxes[i].score > bestScore) {
+                    bestScore = boxes[i].score
                     best = i
-                    bestChannel = if (rr >= gr && rr >= br) 16 else if (gr >= br) 8 else 0
                 }
             }
             if (best < 0) break
             val box = boxes[best]
-            val shift = bestChannel
-            val sorted = box.sortedBy { (it shr shift) and 0xFF }
+            val shift = box.channel
+            // Counting sort on the chosen channel (stable, no boxing)
+            val colors = box.colors
+            val start = IntArray(257)
+            for (c in colors) start[((c shr shift) and 0xFF) + 1]++
+            for (k in 1..256) start[k] += start[k - 1]
+            val sorted = IntArray(colors.size)
+            for (c in colors) sorted[start[(c shr shift) and 0xFF]++] = c
             val mid = sorted.size / 2
-            boxes[best] = sorted.subList(0, mid).toIntArray()
-            boxes += sorted.subList(mid, sorted.size).toIntArray()
+            boxes[best] = Box(sorted.copyOfRange(0, mid))
+            boxes += Box(sorted.copyOfRange(mid, sorted.size))
         }
         return IntArray(boxes.size) { i ->
-            val box = boxes[i]
+            val box = boxes[i].colors
             var r = 0L; var g = 0L; var b = 0L
             for (c in box) {
                 r += (c shr 16) and 0xFF; g += (c shr 8) and 0xFF; b += c and 0xFF
@@ -127,7 +153,7 @@ class GifEncoder(
         }
     }
 
-    private fun ditherToPalette(pixels: IntArray, palette: IntArray): ByteArray {
+    private fun ditherToPalette(pixels: IntArray, palette: IntArray, seeThroughIndex: Int = -1): ByteArray {
         val cache = IntArray(32768) { -1 }
         fun nearest(r: Int, g: Int, b: Int): Int {
             val key = ((r shr 3) shl 10) or ((g shr 3) shl 5) or (b shr 3)
@@ -159,6 +185,11 @@ class GifEncoder(
             for (x in 0 until width) {
                 val c = pixels[y * width + x]
                 val e = (x + 1) * 3
+                if (seeThroughIndex >= 0 && (c ushr 24) < 128) {
+                    // See-through: no color, and no error passed on to neighbours
+                    out[y * width + x] = seeThroughIndex.toByte()
+                    continue
+                }
                 val r = (((c shr 16) and 0xFF) + cur[e] / 16).coerceIn(0, 255)
                 val g = (((c shr 8) and 0xFF) + cur[e + 1] / 16).coerceIn(0, 255)
                 val b = ((c and 0xFF) + cur[e + 2] / 16).coerceIn(0, 255)

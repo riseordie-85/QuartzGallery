@@ -372,34 +372,10 @@ object VideoTools {
                 gif.finish()
             }
             val stem = item.name.substringBeforeLast('.').ifBlank { "video" }
-            saveImageFile(context, tmp, "${stem}_${System.currentTimeMillis() % 100000}.gif", "image/gif", item.dateMillis + startMs)
+            MediaSaver.saveFile(context, tmp, "${stem}_${System.currentTimeMillis() % 100000}.gif", "image/gif", dateTaken = item.dateMillis + startMs)
                 ?: throw IOException("Couldn't save the GIF")
         } finally {
             tmp.delete()
-        }
-    }
-
-    private fun saveImageFile(context: Context, file: File, displayName: String, mime: String, dateTaken: Long): Uri? {
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-            put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, MediaSaver.FOLDER_LABEL + "/")
-            put(MediaStore.MediaColumns.DATE_TAKEN, dateTaken)
-            put(MediaStore.MediaColumns.IS_PENDING, 1)
-        }
-        val uri = runCatching {
-            resolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
-        }.getOrNull() ?: return null
-        return try {
-            resolver.openOutputStream(uri, "w")?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: throw IOException()
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-            uri
-        } catch (e: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
-            null
         }
     }
 

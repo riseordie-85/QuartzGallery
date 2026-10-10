@@ -69,17 +69,51 @@ object MediaSaver {
             Log.w(TAG, "Encoding failed", e)
             return@withContext null
         }
-        insert(context, bytes, displayName, mimeFor(format), relativePath, dateTaken)
+        val write: (java.io.OutputStream) -> Unit = { it.write(bytes) }
+        insert(context, write, displayName, mimeFor(format), relativePath, dateTaken)
             ?: if (relativePath != FOLDER_LABEL) {
-                insert(context, bytes, displayName, mimeFor(format), FOLDER_LABEL, dateTaken)
+                insert(context, write, displayName, mimeFor(format), FOLDER_LABEL, dateTaken)
             } else {
                 null
             }
     }
 
+    /**
+     * Saves a finished image file (e.g. a GIF this app made) as a new image. Same folder rules
+     * as [saveBitmap].
+     */
+    suspend fun saveFile(
+        context: Context,
+        file: File,
+        displayName: String,
+        mime: String,
+        relativePath: String = FOLDER_LABEL,
+        dateTaken: Long = System.currentTimeMillis(),
+    ): Uri? = withContext(Dispatchers.IO) {
+        val write: (java.io.OutputStream) -> Unit = { out -> file.inputStream().use { it.copyTo(out) } }
+        insert(context, write, displayName, mime, relativePath, dateTaken)
+            ?: if (relativePath.trimEnd('/') != FOLDER_LABEL) {
+                insert(context, write, displayName, mime, FOLDER_LABEL, dateTaken)
+            } else {
+                null
+            }
+    }
+
+    /** Replaces an existing image with a finished file. The caller must hold write access. */
+    suspend fun overwriteWithFile(context: Context, uri: Uri, file: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val stream = context.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("No output stream")
+            stream.use { out -> file.inputStream().use { it.copyTo(out) } }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Overwrite failed", e)
+            false
+        }
+    }
+
     private fun insert(
         context: Context,
-        bytes: ByteArray,
+        write: (java.io.OutputStream) -> Unit,
         displayName: String,
         mime: String,
         relativePath: String,
@@ -102,7 +136,7 @@ object MediaSaver {
         } ?: return null
         return try {
             val stream = resolver.openOutputStream(uri) ?: throw IOException("No output stream")
-            stream.use { it.write(bytes) }
+            stream.use { write(it) }
             values.clear()
             values.put(MediaStore.Images.Media.IS_PENDING, 0)
             resolver.update(uri, values, null, null)

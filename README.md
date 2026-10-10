@@ -36,6 +36,9 @@ Quartz Gallery.
     bitrate, HDR, size, folder and location (with "Show on map")
   - **Ultra HDR** photos display in HDR on screens that support it
   - **Motion Photos** (Pixel and Samsung): tap "Play motion" or press and hold
+  - **GIFs and animated WebP** play in the viewer. Editing a GIF (crop, rotate, colors, filters,
+    text, stickers, watermark) applies to every frame and saves a GIF with the original timing
+    and transparency. Animated WebP edits save as a still (Android can't write animated WebP)
 - **Video player**: scrub bar using ExoPlayer's scrubbing mode, ±10s, big **−1 / +1 frame** buttons
   under play/pause (hold one to keep stepping), and **Capture still**, which copies the frame on
   screen at the video's full resolution (works for every format, including WebM)
@@ -141,7 +144,7 @@ grants Gallery "Media management" access so it stops asking.
 - `edit/MarkupSheets.kt`, `edit/LayerLoader.kt` emoji/shape pickers, sticker packs, loading layer pictures
 - `settings/AppSettings.kt`, `ui/SettingsScreen.kt`, `ui/Theme.kt` settings, theme and gradient
 - `data/Search.kt`, `data/Metadata.kt` search/sort and photo details
-- `video/` trim, GIF and frame export
+- `video/` trim, GIF and frame export, GIF reader/writer
 - `map/` offline world map, place names and location index (`assets/map/` — Natural Earth, public domain)
 - `cleanup/` duplicate and look-alike finder
 - `edit/EditRecipes.kt` "Edit again" and saved looks
