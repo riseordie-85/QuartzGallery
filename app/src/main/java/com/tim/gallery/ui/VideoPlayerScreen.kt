@@ -190,49 +190,11 @@ fun VideoPlayerScreen(
     }
 
     fun stepFrame(direction: Int) {
-        player.pause()
-        player.setSeekParameters(SeekParameters.EXACT)
-        val fps = player.videoFormat?.frameRate ?: -1f
-        val frameMs = if (fps > 0f) (1000f / fps).roundToLong().coerceAtLeast(1L) else 33L
-        seekTo(player.currentPosition + direction * frameMs)
+        stepVideoFrame(player, direction)
+        position = player.currentPosition
     }
 
-    /**
-     * Copies the frame that's on screen right now, at the video's own resolution. This is
-     * exactly what you see, for every format (some, like WebM, can't be seeked precisely by
-     * Android's frame grabber, which used to return the first frame).
-     */
-    suspend fun grabDisplayedFrame(): Bitmap? {
-        val sv = playerView?.videoSurfaceView as? SurfaceView ?: return null
-        if (!sv.holder.surface.isValid || sv.width <= 0 || sv.height <= 0) return null
-        val vs = player.videoSize
-        if (vs.width <= 0 || vs.height <= 0) return null
-        var w = (vs.width * vs.pixelWidthHeightRatio).roundToInt()
-        var h = vs.height
-        // Rotated videos (most phone portrait videos) show turned; match what's on screen
-        val viewAspect = sv.width.toFloat() / sv.height
-        if (abs(viewAspect - h.toFloat() / w) < abs(viewAspect - w.toFloat() / h)) {
-            val t = w
-            w = h
-            h = t
-        }
-        val k = min(1f, 4096f / max(w, h))
-        w = (w * k).roundToInt().coerceAtLeast(1)
-        h = (h * k).roundToInt().coerceAtLeast(1)
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        return suspendCancellableCoroutine { cont ->
-            try {
-                PixelCopy.request(
-                    sv,
-                    bmp,
-                    { result -> if (cont.isActive) cont.resume(if (result == PixelCopy.SUCCESS) bmp else null) },
-                    Handler(Looper.getMainLooper()),
-                )
-            } catch (e: Exception) {
-                if (cont.isActive) cont.resume(null)
-            }
-        }
-    }
+    suspend fun grabDisplayedFrame(): Bitmap? = grabVideoFrame(playerView, player)
 
     fun captureStill() {
         if (capturing) return
@@ -241,12 +203,7 @@ fun VideoPlayerScreen(
         capturing = true
         scope.launch {
             val frame = grabDisplayedFrame()
-            val stem = title.substringBeforeLast('.').ifBlank { "video" }
-            val saved = if (frame != null) {
-                MediaSaver.saveBitmap(context, frame, "${stem}_still_${at}ms.jpg")
-            } else {
-                MediaSaver.saveVideoFrame(context, uri, at, title)
-            }
+            val saved = saveVideoStill(context, uri, title, at, frame)
             capturing = false
             snackbar.showSnackbar(
                 if (saved != null) "Still saved to ${MediaSaver.FOLDER_LABEL}"
@@ -437,14 +394,14 @@ private fun RoundButton(icon: ImageVector, description: String, sizeDp: Int, onC
 
 /** Big, thumb-sized frame-step button. Tap for one frame; hold to keep stepping. */
 @Composable
-private fun FrameStepButton(icon: ImageVector, description: String, label: String, onStep: () -> Unit) {
+internal fun FrameStepButton(icon: ImageVector, description: String, label: String, sizeDp: Int = 64, onStep: () -> Unit) {
     val scope = rememberCoroutineScope()
     val step by rememberUpdatedState(onStep)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(64.dp)
+                .size(sizeDp.dp)
                 .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                 .semantics { contentDescription = description }
                 .pointerInput(Unit) {
@@ -464,9 +421,73 @@ private fun FrameStepButton(icon: ImageVector, description: String, label: Strin
                     )
                 },
         ) {
-            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
+            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size((sizeDp * 0.69f).dp))
         }
         Spacer(Modifier.height(4.dp))
         Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/** Pauses and moves one frame forward (+1) or back (−1), exactly. */
+internal fun stepVideoFrame(player: ExoPlayer, direction: Int) {
+    player.pause()
+    player.setSeekParameters(SeekParameters.EXACT)
+    val fps = player.videoFormat?.frameRate ?: -1f
+    val frameMs = if (fps > 0f) (1000f / fps).roundToLong().coerceAtLeast(1L) else 33L
+    val duration = player.duration
+    val target = player.currentPosition + direction * frameMs
+    player.seekTo(if (duration > 0) target.coerceIn(0L, duration) else max(0L, target))
+}
+
+/**
+ * Copies the frame that's on screen right now, at the video's own resolution. This is
+ * exactly what you see, for every format (some, like WebM, can't be seeked precisely by
+ * Android's frame grabber, which used to return the first frame).
+ */
+internal suspend fun grabVideoFrame(playerView: PlayerView?, player: ExoPlayer): Bitmap? {
+    val sv = playerView?.videoSurfaceView as? SurfaceView ?: return null
+    if (!sv.holder.surface.isValid || sv.width <= 0 || sv.height <= 0) return null
+    val vs = player.videoSize
+    if (vs.width <= 0 || vs.height <= 0) return null
+    var w = (vs.width * vs.pixelWidthHeightRatio).roundToInt()
+    var h = vs.height
+    // Rotated videos (most phone portrait videos) show turned; match what's on screen
+    val viewAspect = sv.width.toFloat() / sv.height
+    if (abs(viewAspect - h.toFloat() / w) < abs(viewAspect - w.toFloat() / h)) {
+        val t = w
+        w = h
+        h = t
+    }
+    val k = min(1f, 4096f / max(w, h))
+    w = (w * k).roundToInt().coerceAtLeast(1)
+    h = (h * k).roundToInt().coerceAtLeast(1)
+    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    return suspendCancellableCoroutine { cont ->
+        try {
+            PixelCopy.request(
+                sv,
+                bmp,
+                { result -> if (cont.isActive) cont.resume(if (result == PixelCopy.SUCCESS) bmp else null) },
+                Handler(Looper.getMainLooper()),
+            )
+        } catch (e: Exception) {
+            if (cont.isActive) cont.resume(null)
+        }
+    }
+}
+
+/** Saves a still from a video: the frame on screen if it can be copied, else Android's frame grabber. */
+internal suspend fun saveVideoStill(
+    context: android.content.Context,
+    uri: android.net.Uri,
+    title: String,
+    atMs: Long,
+    frame: Bitmap?,
+): android.net.Uri? {
+    val stem = title.substringBeforeLast('.').ifBlank { "video" }
+    return if (frame != null) {
+        MediaSaver.saveBitmap(context, frame, "${stem}_still_${atMs}ms.jpg")
+    } else {
+        MediaSaver.saveVideoFrame(context, uri, atMs, title)
     }
 }

@@ -25,6 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -71,6 +74,7 @@ import com.tim.gallery.data.MediaDetails
 import com.tim.gallery.data.Metadata
 import com.tim.gallery.data.thumb
 import com.tim.gallery.settings.AppSettings
+import kotlinx.coroutines.launch
 
 /**
  * True when the photo grid should get a preview pane beside it: tablets and unfolded
@@ -226,7 +230,7 @@ private fun PreviewMedia(item: GalleryItem, isCurrent: Boolean, onOpen: () -> Un
     val context = LocalContext.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when {
-            item.isVideo && isCurrent -> InlineVideo(item.uri)
+            item.isVideo && isCurrent -> InlineVideo(item)
             item.isVideo -> AsyncImage(
                 model = item.thumb(),
                 contentDescription = item.name,
@@ -259,28 +263,40 @@ private fun PreviewMedia(item: GalleryItem, isCurrent: Boolean, onOpen: () -> Un
     }
 }
 
-/** Plays a video right in the pane: muted at first, looping, with the usual controls. */
+/**
+ * Plays a video right in the pane: muted at first, looping, with the usual controls, plus the
+ * full player's frame tools underneath (−1 / +1 frame, hold to keep stepping, and Capture still).
+ */
 @OptIn(UnstableApi::class)
 @Composable
-private fun InlineVideo(uri: Uri) {
+private fun InlineVideo(item: GalleryItem) {
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var muted by remember { mutableStateOf(true) }
+    var capturing by remember { mutableStateOf(false) }
     // Made and released together, so an abandoned composition can't leak a player
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(uri, lifecycle) {
+    DisposableEffect(item.uri, lifecycle) {
         val p = ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(uri))
+            setMediaItem(MediaItem.fromUri(item.uri))
+            setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
             repeatMode = Player.REPEAT_MODE_ONE
             volume = if (muted) 0f else 1f
             prepare()
             playWhenReady = true
         }
         player = p
+        var wasPlaying = true
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_PAUSE -> p.pause()
-                Lifecycle.Event.ON_RESUME -> p.play()
+                Lifecycle.Event.ON_PAUSE -> {
+                    wasPlaying = p.isPlaying
+                    p.pause()
+                }
+                // Only pick up again if it was playing (not if you'd paused on a frame)
+                Lifecycle.Event.ON_RESUME -> if (wasPlaying) p.play()
                 else -> Unit
             }
         }
@@ -291,34 +307,90 @@ private fun InlineVideo(uri: Uri) {
             p.release()
         }
     }
-    Box(Modifier.fillMaxSize()) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    controllerShowTimeoutMs = 2500
-                }
-            },
-            update = { view -> if (view.player !== player) view.player = player },
-            onRelease = { view -> view.player = null },
-            modifier = Modifier.fillMaxSize(),
-        )
-        IconButton(
-            onClick = {
-                muted = !muted
-                player?.volume = if (muted) 0f else 1f
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-                .background(Color.Black.copy(alpha = 0.45f), CircleShape),
-        ) {
-            Icon(
-                if (muted) Icons.AutoMirrored.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp,
-                contentDescription = if (muted) "Sound on" else "Mute",
-                tint = Color.White,
+
+    fun captureStill() {
+        val p = player ?: return
+        if (capturing) return
+        p.pause()
+        val at = p.currentPosition
+        capturing = true
+        scope.launch {
+            val frame = grabVideoFrame(playerView, p)
+            val saved = saveVideoStill(context, item.uri, item.name, at, frame)
+            capturing = false
+            android.widget.Toast.makeText(
+                context,
+                if (saved != null) "Still saved to ${com.tim.gallery.data.MediaSaver.FOLDER_LABEL}" else "Couldn't capture this frame",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        controllerShowTimeoutMs = 2500
+                        playerView = this
+                    }
+                },
+                update = { view -> if (view.player !== player) view.player = player },
+                onRelease = { view ->
+                    view.player = null
+                    playerView = null
+                },
+                modifier = Modifier.fillMaxSize(),
             )
+            IconButton(
+                onClick = {
+                    muted = !muted
+                    player?.volume = if (muted) 0f else 1f
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+            ) {
+                Icon(
+                    if (muted) Icons.AutoMirrored.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp,
+                    contentDescription = if (muted) "Sound on" else "Mute",
+                    tint = Color.White,
+                )
+            }
+            if (capturing) {
+                androidx.compose.material3.CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+            }
+        }
+        // Frame tools
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF111111))
+                .padding(vertical = 8.dp, horizontal = 12.dp),
+        ) {
+            FrameStepButton(
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                "Previous frame",
+                "−1 frame",
+                sizeDp = 44,
+            ) { player?.let { stepVideoFrame(it, -1) } }
+            FrameStepButton(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                "Next frame",
+                "+1 frame",
+                sizeDp = 44,
+            ) { player?.let { stepVideoFrame(it, 1) } }
+            Spacer(Modifier.size(8.dp))
+            androidx.compose.material3.FilledTonalButton(onClick = { captureStill() }, enabled = !capturing && player != null) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text("Capture still")
+            }
         }
     }
 }

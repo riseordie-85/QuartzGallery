@@ -26,7 +26,7 @@ Quartz Gallery.
     New albums are created under `Pictures/`.
 - **Preview pane** (tablets and an unfolded Fold in landscape; switch in Settings): tapping a
   photo shows it beside the grid with its details and favorite / share / edit / trash buttons.
-  Videos play there muted. Swipe the preview to go through photos; tap it for full screen.
+  Videos play there muted, with −1 / +1 frame buttons (hold to keep stepping) and Capture still. Swipe the preview to go through photos; tap it for full screen.
 - **Selecting**: long-press a thumbnail, keep your finger down and drag to select a range
   (the grid scrolls when you reach the top or bottom). Starting on a selected photo deselects.
   Then favorite, share, move, delete or **watermark** them together.
