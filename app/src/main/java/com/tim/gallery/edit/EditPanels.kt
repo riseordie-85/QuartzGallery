@@ -26,7 +26,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.IconButton
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,6 +70,37 @@ import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
 
+/**
+ * True inside the editor's side panel on wide screens (tablets, unfolded foldables): rows
+ * wrap onto more lines instead of scrolling sideways, and panels show more at once.
+ */
+val LocalWidePanel = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** A row of chips/buttons: scrolls sideways normally, wraps onto more lines in the wide panel. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun PanelRow(
+    modifier: Modifier = Modifier,
+    spacing: androidx.compose.ui.unit.Dp = 8.dp,
+    content: @Composable () -> Unit,
+) {
+    if (LocalWidePanel.current) {
+        androidx.compose.foundation.layout.FlowRow(
+            modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalArrangement = Arrangement.spacedBy(spacing),
+        ) { content() }
+    } else {
+        Row(
+            modifier = modifier
+                .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) { content() }
+    }
+}
+
 private val PanelText = Color.White
 private val PanelDim = Color.White.copy(alpha = 0.65f)
 
@@ -83,11 +114,12 @@ private fun chipColors() = FilterChipDefaults.filterChipColors(
 )
 
 @Composable
-fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+fun ToolButton(icon: ImageVector, label: String, enabled: Boolean = true, selected: Boolean = false, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color.White.copy(alpha = 0.16f) else Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
@@ -104,13 +136,9 @@ fun ColorDots(
     onPick: (Int) -> Unit,
     leading: (@Composable () -> Unit)? = null,
 ) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (leading != null) item { leading() }
-        items(colors) { c ->
+    PanelRow(spacing = 10.dp) {
+        if (leading != null) leading()
+        colors.forEach { c ->
             val isSel = c == selected
             Box(
                 Modifier
@@ -235,11 +263,8 @@ fun CropPanel(
             )
         }
 
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(AspectOption.entries) { option ->
+        PanelRow {
+            AspectOption.entries.forEach { option ->
                 FilterChip(
                     selected = option == g.aspect,
                     onClick = { onGeometry(GeometryOps.setAspect(g, option, w, h), null) },
@@ -269,6 +294,33 @@ fun AdjustPanel(
     onChange: (EditState, String?) -> Unit,
     onDone: () -> Unit,
 ) {
+    if (LocalWidePanel.current) {
+        // Plenty of room: every slider at once
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Adjust.entries.forEach { a ->
+                val v = state.adjust(a)
+                LabeledSlider(
+                    label = a.label,
+                    value = v,
+                    range = if (a.bipolar) -1f..1f else 0f..1f,
+                    valueText = (v * 100).roundToInt().let { if (a.bipolar && it > 0) "+$it" else "$it" },
+                    onChange = { nv ->
+                        val snapped = if (a.bipolar && kotlin.math.abs(nv) < 0.02f) 0f else nv
+                        onChange(state.copy(adjust = state.adjust + (a to snapped)), "adjust-${a.name}")
+                    },
+                    onDone = onDone,
+                    onReset = if (v != 0f) ({ onChange(state.copy(adjust = state.adjust - a), null) }) else null,
+                )
+            }
+            if (state.adjust.values.any { it != 0f }) {
+                TextButton(
+                    onClick = { onChange(state.copy(adjust = emptyMap()), null) },
+                    modifier = Modifier.padding(start = 8.dp),
+                ) { Text("Reset all adjustments") }
+            }
+        }
+        return
+    }
     var current by rememberSaveable { mutableStateOf(Adjust.EXPOSURE) }
     val value = state.adjust(current)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -284,11 +336,8 @@ fun AdjustPanel(
             onDone = onDone,
             onReset = if (value != 0f) ({ onChange(state.copy(adjust = state.adjust - current), null) }) else null,
         )
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(Adjust.entries) { a ->
+        PanelRow {
+            Adjust.entries.forEach { a ->
                 val changed = state.adjust(a) != 0f
                 FilterChip(
                     selected = a == current,
@@ -332,18 +381,24 @@ fun FiltersPanel(
             DuotoneControls(state, onChange, colors)
         }
         LooksRow(state, onChange)
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(FilterPreset.entries) { preset ->
-                FilterThumb(
-                    session = session,
-                    state = state,
-                    preset = preset,
-                    selected = preset == state.filter,
-                    onClick = { onChange(state.copy(filter = preset, filterStrength = 1f), null) },
-                )
+        val thumb: @Composable (FilterPreset) -> Unit = { preset ->
+            FilterThumb(
+                session = session,
+                state = state,
+                preset = preset,
+                selected = preset == state.filter,
+                onClick = { onChange(state.copy(filter = preset, filterStrength = 1f), null) },
+            )
+        }
+        if (LocalWidePanel.current) {
+            PanelRow(spacing = 10.dp) { FilterPreset.entries.forEach { thumb(it) } }
+        } else {
+            // Lazy: only the visible previews are drawn while you drag a slider
+            androidx.compose.foundation.lazy.LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(FilterPreset.entries) { thumb(it) }
             }
         }
     }
@@ -359,15 +414,15 @@ private fun LooksRow(state: EditState, onChange: (EditState, String?) -> Unit) {
     var naming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<Look?>(null) }
     val hasLook = state.adjust.isNotEmpty() || state.filter != FilterPreset.NONE
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        item {
-            Text("Your looks", color = PanelDim, style = MaterialTheme.typography.labelMedium)
-        }
-        items(looks, key = { it.name }) { look ->
+    PanelRow {
+        Text(
+            "Your looks",
+            color = PanelDim,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+        looks.forEach { look ->
+          androidx.compose.runtime.key(look.name) {
             Box(
                 Modifier
                     .clip(RoundedCornerShape(16.dp))
@@ -380,10 +435,9 @@ private fun LooksRow(state: EditState, onChange: (EditState, String?) -> Unit) {
             ) {
                 Text(look.name, color = PanelText, style = MaterialTheme.typography.labelLarge)
             }
+          }
         }
-        item {
-            TextButton(onClick = { naming = true }, enabled = hasLook) { Text("+ Save this look") }
-        }
+        TextButton(onClick = { naming = true }, enabled = hasLook) { Text("+ Save this look") }
     }
     if (naming) {
         var name by remember { mutableStateOf("") }
@@ -425,28 +479,17 @@ private fun LooksRow(state: EditState, onChange: (EditState, String?) -> Unit) {
 /** Shadow and highlight colors for the duotone filter, plus ready-made pairs. */
 @Composable
 private fun DuotoneControls(state: EditState, onChange: (EditState, String?) -> Unit, colors: ColorTools) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        item {
-            SwatchButton("Shadows", state.duoShadow) {
-                colors.pick(state.duoShadow, false) { s, c -> s.copy(duoShadow = c) }
-            }
+    PanelRow(spacing = 10.dp) {
+        SwatchButton("Shadows", state.duoShadow) {
+            colors.pick(state.duoShadow, false) { s, c -> s.copy(duoShadow = c) }
         }
-        item {
-            IconButton(onClick = { onChange(state.copy(duoShadow = state.duoHighlight, duoHighlight = state.duoShadow), null) }) {
-                Icon(Icons.Outlined.SwapHoriz, contentDescription = "Swap colors", tint = PanelText)
-            }
+        IconButton(onClick = { onChange(state.copy(duoShadow = state.duoHighlight, duoHighlight = state.duoShadow), null) }) {
+            Icon(Icons.Outlined.SwapHoriz, contentDescription = "Swap colors", tint = PanelText)
         }
-        item {
-            SwatchButton("Highlights", state.duoHighlight) {
-                colors.pick(state.duoHighlight, false) { s, c -> s.copy(duoHighlight = c) }
-            }
+        SwatchButton("Highlights", state.duoHighlight) {
+            colors.pick(state.duoHighlight, false) { s, c -> s.copy(duoHighlight = c) }
         }
-        item { Spacer(Modifier.width(4.dp)) }
-        items(DUOTONE_PRESETS) { (a, b) ->
+        DUOTONE_PRESETS.forEach { (a, b) ->
             val sel = state.duoShadow == a && state.duoHighlight == b
             Row(
                 Modifier
@@ -563,11 +606,8 @@ fun CutoutPanel(
                 }
             }
         } else {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(CutoutMode.entries) { mode ->
+            PanelRow {
+                CutoutMode.entries.forEach { mode ->
                     FilterChip(
                         selected = state.cutout == mode,
                         onClick = { onChange(state.copy(cutout = mode)) },
@@ -642,18 +682,21 @@ fun MarkupPanel(
     onDelete: (Layer) -> Unit,
     onDeselect: () -> Unit,
     colors: ColorTools,
+    /** Wide screens: which picker is open below the buttons. */
+    library: LibraryTab? = null,
 ) {
     if (selected == null) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
                 ToolButton(Icons.Outlined.TextFields, "Text", onClick = onAddText)
-                ToolButton(Icons.Outlined.Image, "Sticker", onClick = onAddSticker)
-                ToolButton(Icons.Outlined.EmojiEmotions, "Emoji", onClick = onAddEmoji)
-                ToolButton(Icons.Outlined.Category, "Shape", onClick = onAddShape)
-                ToolButton(Icons.AutoMirrored.Outlined.BrandingWatermark, "Watermark", onClick = onAddWatermark)
+                ToolButton(Icons.Outlined.Image, "Sticker", selected = library == LibraryTab.STICKERS, onClick = onAddSticker)
+                ToolButton(Icons.Outlined.EmojiEmotions, "Emoji", selected = library == LibraryTab.EMOJI, onClick = onAddEmoji)
+                ToolButton(Icons.Outlined.Category, "Shape", selected = library == LibraryTab.SHAPES, onClick = onAddShape)
+                ToolButton(Icons.AutoMirrored.Outlined.BrandingWatermark, "Watermark", selected = library == LibraryTab.WATERMARKS, onClick = onAddWatermark)
             }
             Text(
-                "Add something, or tap something on the photo to change it.",
+                if (library != null) "Tap to add, or tap something on the photo to change it."
+                else "Add something, or tap something on the photo to change it.",
                 color = PanelDim,
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
@@ -668,24 +711,11 @@ fun MarkupPanel(
     if (prop !in props) prop = props.first()
     val id = selected.id
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(props) { p ->
-                FilterChip(
-                    selected = p == prop,
-                    onClick = { prop = p },
-                    label = { Text(p.label) },
-                    colors = chipColors(),
-                )
-            }
-        }
-
-        Box(Modifier.fillMaxWidth().heightIn(min = 64.dp), contentAlignment = Alignment.Center) {
+    val wide = LocalWidePanel.current
+    // The control for one property of the selected item
+    val editor: @Composable (LayerProp) -> Unit = { which ->
             val shape = selected as? ShapeLayer
-            when (prop) {
+            when (which) {
                 LayerProp.OPACITY -> LabeledSlider(
                     label = "Opacity",
                     value = selected.opacity,
@@ -714,7 +744,7 @@ fun MarkupPanel(
                     onPick = { onChange(shape.copy(stroke = it), null) },
                     onCustom = { colors.pick(shape.stroke, true) { s, c -> s.updateLayer(id) { (it as ShapeLayer).copy(stroke = c) } } },
                     onEyedropper = { colors.eyedrop { s, c -> s.updateLayer(id) { (it as ShapeLayer).copy(stroke = c) } } },
-                    includeNone = prop == LayerProp.OUTLINE,
+                    includeNone = which == LayerProp.OUTLINE,
                 )
                 LayerProp.THICKNESS -> if (shape != null) LabeledSlider(
                     label = "Thickness",
@@ -754,6 +784,34 @@ fun MarkupPanel(
                     onDone = onDone,
                 )
             }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+        if (wide) {
+            // Plenty of room: every setting at once
+            props.forEach { p ->
+                if (p == LayerProp.FILL || p == LayerProp.OUTLINE || p == LayerProp.COLOR) {
+                    Text(
+                        p.label,
+                        color = PanelText,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(start = 20.dp, top = 6.dp, bottom = 2.dp),
+                    )
+                }
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) { editor(p) }
+            }
+        } else {
+            PanelRow {
+                props.forEach { p ->
+                    FilterChip(
+                        selected = p == prop,
+                        onClick = { prop = p },
+                        label = { Text(p.label) },
+                        colors = chipColors(),
+                    )
+                }
+            }
+            Box(Modifier.fillMaxWidth().heightIn(min = 64.dp), contentAlignment = Alignment.Center) { editor(prop) }
         }
 
         Row(horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {

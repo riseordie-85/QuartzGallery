@@ -12,6 +12,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -347,6 +350,17 @@ private fun rememberLogoAssets(presets: List<WatermarkPreset>): LayerAssets {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WatermarkSheet(onDismiss: () -> Unit, onApply: ((WatermarkPreset) -> Unit)?) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        WatermarkList(onApply = onApply)
+    }
+}
+
+/**
+ * Your saved watermarks with edit and delete (in a sheet, or right in the editor's side panel
+ * on wide screens). Tapping one calls [onApply]; without it, tapping edits.
+ */
+@Composable
+fun WatermarkList(onApply: ((WatermarkPreset) -> Unit)?, listMaxHeight: androidx.compose.ui.unit.Dp = 480.dp) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { WatermarkStore.init(context) }
     val presets by WatermarkStore.presets.collectAsState()
@@ -357,7 +371,7 @@ fun WatermarkSheet(onDismiss: () -> Unit, onApply: ((WatermarkPreset) -> Unit)?)
     val fontVersion by Fonts.version.collectAsState()
     LaunchedEffect(presets) { presets.mapNotNull { it.text?.fontKey }.distinct().forEach { Fonts.load(context, it) } }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    Column {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
@@ -381,7 +395,7 @@ fun WatermarkSheet(onDismiss: () -> Unit, onApply: ((WatermarkPreset) -> Unit)?)
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 32.dp),
             ) { Text("Create a watermark") }
         } else {
-            LazyColumn(Modifier.heightIn(max = 480.dp).padding(bottom = 24.dp)) {
+            LazyColumn(Modifier.heightIn(max = listMaxHeight).padding(bottom = 24.dp)) {
                 items(presets, key = { it.id }) { p ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -466,6 +480,7 @@ fun WatermarkEditorDialog(
     var busy by remember { mutableStateOf(false) }
     var cutting by remember { mutableStateOf(false) }
     val fontVersion by Fonts.version.collectAsState()
+    com.tim.gallery.ui.PortraitOnPhones()
 
     LaunchedEffect(Unit) {
         initial?.logo?.let { savedLogo = LayerLoader.load(context, it, 1024) }
@@ -516,45 +531,8 @@ fun WatermarkEditorDialog(
         }
     }
 
-    FullScreenDialog(onDismissRequest = { if (!busy) onDismiss() }) {
-        Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
-                IconButton(onClick = onDismiss, enabled = !busy) { Icon(Icons.Filled.Close, contentDescription = "Cancel", tint = Color.White) }
-                Text(
-                    if (initial == null) "New watermark" else "Edit watermark",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f),
-                )
-                if (busy) {
-                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.padding(horizontal = 16.dp).size(20.dp))
-                } else {
-                    TextButton(
-                        enabled = (draft.text?.text?.isNotBlank() == true) || (draft.logo != null && logoBitmap != null),
-                        onClick = { save() },
-                    ) { Text("Save") }
-                }
-            }
-
-            // Preview
-            Canvas(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .aspectRatio(3f / 2f)
-                    .clip(RoundedCornerShape(12.dp))
-            ) {
-                if (fontVersion < 0) return@Canvas
-                drawWatermarkPreview(draft, assets)
-            }
-
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(vertical = 12.dp),
-            ) {
+    // Text, logo, position and size settings (beside the preview on wide screens, below it otherwise)
+    val controls: @Composable ColumnScope.() -> Unit = {
                 OutlinedTextField(
                     value = draft.name,
                     onValueChange = { draft = draft.copy(name = it) },
@@ -679,6 +657,70 @@ fun WatermarkEditorDialog(
                     onChange = { draft = draft.copy(opacity = it) },
                     onDone = {},
                 )
+    }
+    val preview: @Composable (Modifier) -> Unit = { m ->
+        Canvas(m.clip(RoundedCornerShape(12.dp))) {
+            if (fontVersion < 0) return@Canvas
+            drawWatermarkPreview(draft, assets)
+        }
+    }
+
+    FullScreenDialog(onDismissRequest = { if (!busy) onDismiss() }) {
+        Column(Modifier.fillMaxSize()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
+                IconButton(onClick = onDismiss, enabled = !busy) { Icon(Icons.Filled.Close, contentDescription = "Cancel", tint = Color.White) }
+                Text(
+                    if (initial == null) "New watermark" else "Edit watermark",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                if (busy) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.padding(horizontal = 16.dp).size(20.dp))
+                } else {
+                    TextButton(
+                        enabled = (draft.text?.text?.isNotBlank() == true) || (draft.logo != null && logoBitmap != null),
+                        onClick = { save() },
+                    ) { Text("Save") }
+                }
+            }
+
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val spaceHeight = maxHeight
+                if (maxWidth > maxHeight && maxWidth >= 600.dp) {
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxHeight().padding(16.dp), contentAlignment = Alignment.Center) {
+                            preview(Modifier.aspectRatio(3f / 2f))
+                        }
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .width(400.dp)
+                                .fillMaxHeight()
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = 12.dp),
+                            content = controls,
+                        )
+                    }
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        // Never taller than half the space, so the settings stay in view
+                        Box(
+                            Modifier.fillMaxWidth().heightIn(max = spaceHeight * 0.5f).padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            preview(Modifier.aspectRatio(3f / 2f))
+                        }
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = 12.dp),
+                            content = controls,
+                        )
+                    }
+                }
             }
         }
 
@@ -713,8 +755,12 @@ fun BatchWatermarkDialog(items: List<GalleryItem>, onDismiss: () -> Unit, onFini
     val presets by WatermarkStore.presets.collectAsState()
     var chosen by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<WatermarkPreset?>(null) }
     var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     val photos = remember(items) { items.filter { !it.isVideo } }
+    val assets = rememberLogoAssets(presets)
+    val fontVersion by Fonts.version.collectAsState()
+    LaunchedEffect(presets) { presets.mapNotNull { it.text?.fontKey }.distinct().forEach { Fonts.load(context, it) } }
     val skipped = items.size - photos.size
 
     LaunchedEffect(presets) { if (chosen == null || presets.none { it.id == chosen }) chosen = presets.firstOrNull()?.id }
@@ -754,15 +800,31 @@ fun BatchWatermarkDialog(items: List<GalleryItem>, onDismiss: () -> Unit, onFini
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(4.dp))
-                    presets.forEach { preset ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .selectable(selected = chosen == preset.id, onClick = { chosen = preset.id }),
-                        ) {
-                            RadioButton(selected = chosen == preset.id, onClick = { chosen = preset.id })
-                            Text(preset.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                        presets.forEach { preset ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .selectable(selected = chosen == preset.id, onClick = { chosen = preset.id })
+                                    .padding(vertical = 2.dp),
+                            ) {
+                                RadioButton(selected = chosen == preset.id, onClick = { chosen = preset.id })
+                                Canvas(
+                                    Modifier
+                                        .width(60.dp)
+                                        .height(40.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                ) {
+                                    if (fontVersion < 0) return@Canvas
+                                    drawWatermarkPreview(preset, assets)
+                                }
+                                Spacer(Modifier.width(10.dp))
+                                Text(preset.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                IconButton(onClick = { editing = preset }) {
+                                    Icon(Icons.Outlined.Edit, contentDescription = "Edit ${preset.name}")
+                                }
+                            }
                         }
                     }
                     TextButton(onClick = { creating = true }) {
@@ -783,12 +845,16 @@ fun BatchWatermarkDialog(items: List<GalleryItem>, onDismiss: () -> Unit, onFini
         },
     )
 
-    if (creating) {
+    if (creating || editing != null) {
         WatermarkEditorDialog(
-            initial = null,
-            onDismiss = { creating = false },
+            initial = editing,
+            onDismiss = {
+                creating = false
+                editing = null
+            },
             onSaved = {
                 creating = false
+                editing = null
                 chosen = it.id
             },
         )

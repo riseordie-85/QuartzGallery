@@ -100,6 +100,7 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     SystemBarIcons(darkBackground = true)
+    com.tim.gallery.ui.PortraitOnPhones()
 
     val info by produceState<VideoInfo?>(null, item.id) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { VideoTools.info(context, item.uri) }

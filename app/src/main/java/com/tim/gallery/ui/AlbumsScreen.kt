@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -253,8 +254,12 @@ fun AlbumScreen(
     onAddItems: () -> Unit,
     onRenamed: (String) -> Unit,
     onOpenPersonal: () -> Unit,
+    onEdit: (Long) -> Unit = {},
 ) {
     val items by remember(albumKey) { vm.albumItems(albumKey) }.collectAsStateWithLifecycle()
+    val paneActive = rememberPreviewPaneActive()
+    var previewId by rememberSaveable(albumKey) { mutableStateOf<Long?>(null) }
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val albums by vm.albums.collectAsStateWithLifecycle()
     val album = albums.firstOrNull { it.key == albumKey }
     val actions = rememberMediaActions(vm)
@@ -363,12 +368,25 @@ fun AlbumScreen(
             }
         },
     ) { padding ->
+      PreviewPaneLayout(
+        active = paneActive,
+        items = items,
+        previewId = previewId,
+        onPreviewChange = { previewId = it },
+        onOpenFull = onOpenItem,
+        onEdit = onEdit,
+        actions = actions,
+        contentPadding = padding,
+      ) { gridModifier ->
         MediaGrid(
             items = items,
             selected = selected,
-            onOpen = { onOpenItem(it.id) },
+            onOpen = { if (paneActive) previewId = it.id else onOpenItem(it.id) },
             onSelectionChange = { selected = it },
             contentPadding = padding,
+            modifier = gridModifier,
+            focusId = if (paneActive) previewId else null,
+            gridState = gridState,
             empty = {
                 if (isFavorites || isStickers) {
                     Text(
@@ -383,6 +401,7 @@ fun AlbumScreen(
                 }
             },
         )
+      }
     }
 
     hiding?.let { list ->

@@ -1,6 +1,5 @@
 package com.tim.gallery.data
 
-import android.app.WallpaperManager
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
@@ -252,20 +251,6 @@ object MediaSaver {
                     (h * s).roundToInt().coerceAtLeast(1),
                 )
             }
-        }
-    }
-
-    /**
-     * Sets a photo as wallpaper. [which] = WallpaperManager.FLAG_SYSTEM, FLAG_LOCK or both.
-     * Android center-crops it to fill the screen.
-     */
-    suspend fun setWallpaper(context: Context, uri: Uri, which: Int): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val bitmap = decodeUpright(context, uri, maxPx = 4096)
-            WallpaperManager.getInstance(context).setBitmap(bitmap, null, true, which)
-            true
-        } catch (e: Exception) {
-            false
         }
     }
 

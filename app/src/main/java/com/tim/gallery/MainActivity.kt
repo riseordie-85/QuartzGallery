@@ -109,6 +109,7 @@ private fun GalleryRoot() {
                         onOpen = { id -> nav.navigate("viewer/$id") },
                         onOpenSettings = { nav.navigate("settings") },
                         onOpenPersonal = { nav.navigate("personal") },
+                        onEdit = { id -> nav.navigate(if (vm.find(id)?.isVideo == true) "videoedit/$id" else "editor/$id") },
                         bottomBar = { MainTabsBar(MainTab.PHOTOS) { nav.switchTab(it) } },
                     )
                 }
@@ -184,6 +185,7 @@ private fun GalleryRoot() {
                             nav.navigate("album/${encodeKey(newKey)}")
                         },
                         onOpenPersonal = { nav.navigate("personal") },
+                        onEdit = { id -> nav.navigate(if (vm.find(id)?.isVideo == true) "videoedit/$id" else "editor/$id") },
                     )
                 }
             }
@@ -215,6 +217,7 @@ private fun GalleryRoot() {
                     onOpenPersonal = { nav.navigate("personal") },
                     onShowOnMap = { lat, lon -> nav.navigate("map?lat=$lat&lon=$lon") },
                     onEditAgain = { id -> nav.navigate("editagain/$id") },
+                    onSetWallpaper = { id -> nav.navigate("wallpaper/$id") },
                 )
             }
             composable(
@@ -252,6 +255,17 @@ private fun GalleryRoot() {
                         EditorScreen(vm = vm, item = copy, onClose = { nav.popBackStack() })
                     }
                     else -> EditorScreen(vm = vm, item = original, onClose = { nav.popBackStack() }, reopen = r, editingCopy = copy)
+                }
+            }
+            composable(
+                "wallpaper/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            ) { entry ->
+                val item = vm.find(entry.arguments?.getLong("id") ?: 0L)
+                if (item == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                } else {
+                    com.tim.gallery.ui.WallpaperScreen(item = item, onClose = { nav.popBackStack() })
                 }
             }
             composable(

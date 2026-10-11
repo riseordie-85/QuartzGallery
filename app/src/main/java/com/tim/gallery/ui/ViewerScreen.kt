@@ -1,6 +1,5 @@
 package com.tim.gallery.ui
 
-import android.app.WallpaperManager
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -102,6 +101,7 @@ fun ViewerScreen(
     onOpenPersonal: () -> Unit,
     onShowOnMap: (Double, Double) -> Unit = { _, _ -> },
     onEditAgain: (Long) -> Unit = {},
+    onSetWallpaper: (Long) -> Unit = {},
 ) {
     SystemBarIcons(darkBackground = true)
     val inTrash = albumKey == AlbumOps.TRASH_KEY
@@ -127,7 +127,6 @@ fun ViewerScreen(
     var zoomed by remember { mutableStateOf(false) }
     var infoFor by remember { mutableStateOf<GalleryItem?>(null) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
-    var wallpaperFor by remember { mutableStateOf<GalleryItem?>(null) }
     var stickerFrom by remember { mutableStateOf<GalleryItem?>(null) }
     var hiding by remember { mutableStateOf<GalleryItem?>(null) }
     var copying by remember { mutableStateOf<List<GalleryItem>?>(null) }
@@ -283,7 +282,7 @@ fun ViewerScreen(
                                         leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },
                                         onClick = {
                                             menuOpen = false
-                                            wallpaperFor = current
+                                            onSetWallpaper(current.id)
                                         },
                                     )
                                     DropdownMenuItem(
@@ -470,41 +469,6 @@ fun ViewerScreen(
         )
     }
 
-    wallpaperFor?.let { item ->
-        WallpaperDialog(
-            onDismiss = { wallpaperFor = null },
-            onPick = { which ->
-                wallpaperFor = null
-                actions.setWallpaper(item, which)
-            },
-        )
-    }
-}
-
-@Composable
-private fun WallpaperDialog(onDismiss: () -> Unit, onPick: (Int) -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set as wallpaper") },
-        text = {
-            Column {
-                ListItem(
-                    headlineContent = { Text("Home screen") },
-                    modifier = Modifier.clickable { onPick(WallpaperManager.FLAG_SYSTEM) },
-                )
-                ListItem(
-                    headlineContent = { Text("Lock screen") },
-                    modifier = Modifier.clickable { onPick(WallpaperManager.FLAG_LOCK) },
-                )
-                ListItem(
-                    headlineContent = { Text("Home and lock screens") },
-                    modifier = Modifier.clickable { onPick(WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK) },
-                )
-            }
-        },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
 }
 
 @Composable

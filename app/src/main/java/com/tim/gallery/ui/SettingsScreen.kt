@@ -222,6 +222,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
                 }
             }
 
+            item {
+                val previewPane by AppSettings.previewPane.collectAsState()
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = { Text("Preview pane on wide screens") },
+                    supportingContent = {
+                        Text("Tablets and unfolded phones in landscape: tapping a photo shows it beside the grid, with its details. Tap the preview for full screen.")
+                    },
+                    trailingContent = {
+                        Switch(checked = previewPane, onCheckedChange = { AppSettings.setPreviewPane(it) })
+                    },
+                )
+            }
+
             // ------------------------------------------------ editing
             item { SectionTitle("Editing") }
             item {

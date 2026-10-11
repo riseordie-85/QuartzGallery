@@ -63,9 +63,19 @@ object AppSettings {
     private val _gridCell = MutableStateFlow(104)
     val gridCell: StateFlow<Int> = _gridCell.asStateFlow()
 
+    /** Tablets / unfolded foldables in landscape: preview the tapped photo beside the grid. */
+    private val _previewPane = MutableStateFlow(true)
+    val previewPane: StateFlow<Boolean> = _previewPane.asStateFlow()
+
+    fun setPreviewPane(on: Boolean) {
+        _previewPane.value = on
+        prefs?.edit()?.putBoolean("preview_pane", on)?.apply()
+    }
+
     fun init(context: Context) {
         val p = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         prefs = p
+        _previewPane.value = p.getBoolean("preview_pane", true)
         _theme.value = runCatching { ThemeMode.valueOf(p.getString("theme", null) ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM)
         val d = GradientSettings()
         _gradient.value = GradientSettings(

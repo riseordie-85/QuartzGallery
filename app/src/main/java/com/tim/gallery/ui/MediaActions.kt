@@ -210,14 +210,6 @@ class MediaActions internal constructor(
         }
     }
 
-    /** [which] is WallpaperManager.FLAG_SYSTEM (home), FLAG_LOCK, or both OR'd together. */
-    fun setWallpaper(item: GalleryItem, which: Int) {
-        vm.viewModelScope.launch {
-            val ok = MediaSaver.setWallpaper(context, item.uri, which)
-            toast(if (ok) "Wallpaper set" else "Couldn't set this as wallpaper")
-        }
-    }
-
     fun share(items: List<GalleryItem>) {
         if (items.isEmpty()) return
         if (items.size == 1) {

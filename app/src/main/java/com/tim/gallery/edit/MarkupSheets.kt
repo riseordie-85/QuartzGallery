@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -75,13 +76,18 @@ private val EMOJI = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmojiSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    var group by rememberSaveable { mutableIntStateOf(0) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            itemsIndexed(EMOJI) { i, g ->
+        EmojiPicker(onPick = onPick)
+    }
+}
+
+/** The emoji groups and grid (in a sheet, or right in the editor's side panel on wide screens). */
+@Composable
+fun EmojiPicker(onPick: (String) -> Unit, gridHeight: androidx.compose.ui.unit.Dp = 380.dp) {
+    var group by rememberSaveable { mutableIntStateOf(0) }
+    Column {
+        PanelRow(spacing = 6.dp) {
+            EMOJI.forEachIndexed { i, g ->
                 FilterChip(
                     selected = i == group,
                     onClick = { group = i },
@@ -92,7 +98,7 @@ fun EmojiSheet(onDismiss: () -> Unit, onPick: (String) -> Unit) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(52.dp),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 32.dp),
-            modifier = Modifier.height(380.dp),
+            modifier = Modifier.height(gridHeight),
         ) {
             items(EMOJI[group].emojis) { e ->
                 Box(
@@ -119,11 +125,19 @@ fun ShapeSheet(onDismiss: () -> Unit, onPick: (ShapeKind) -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
         )
+        ShapePicker(onPick = onPick)
+    }
+}
+
+/** The shape grid (in a sheet, or right in the editor's side panel on wide screens). */
+@Composable
+fun ShapePicker(onPick: (ShapeKind) -> Unit, maxHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Unspecified) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(96.dp),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.heightIn(max = maxHeight),
         ) {
             items(ShapeKind.entries) { kind ->
                 val sample = remember(kind) { ShapeLayer.default(1L, kind).let { it.copy(scale = if (kind.isStroke) 0.8f else 0.62f) } }
@@ -145,5 +159,4 @@ fun ShapeSheet(onDismiss: () -> Unit, onPick: (ShapeKind) -> Unit) {
                 }
             }
         }
-    }
 }

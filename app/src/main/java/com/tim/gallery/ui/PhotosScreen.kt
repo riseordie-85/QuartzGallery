@@ -89,6 +89,7 @@ fun PhotosScreen(
     onOpenSettings: () -> Unit,
     bottomBar: @Composable () -> Unit,
     onOpenPersonal: () -> Unit,
+    onEdit: (Long) -> Unit = {},
 ) {
     val items by vm.items.collectAsStateWithLifecycle()
     val type by vm.typeFilter.collectAsStateWithLifecycle()
@@ -103,6 +104,9 @@ fun PhotosScreen(
         vm.query.value = searchText
     }
     val actions = rememberMediaActions(vm)
+    val paneActive = rememberPreviewPaneActive()
+    var previewId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
 
     var selected by remember { mutableStateOf(emptySet<Long>()) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
@@ -208,28 +212,42 @@ fun PhotosScreen(
             }
             return@Scaffold
         }
-        MediaGrid(
+        PreviewPaneLayout(
+            active = paneActive,
             items = items,
-            selected = selected,
-            onOpen = { onOpen(it.id) },
-            onSelectionChange = { selected = it },
+            previewId = previewId,
+            onPreviewChange = { previewId = it },
+            onOpenFull = onOpen,
+            onEdit = onEdit,
+            actions = actions,
             contentPadding = padding,
-            empty = {
-                Text(
-                    if (query.isNotBlank()) "Nothing matches “$query”." else "Nothing to show here yet.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.fillMaxWidth().padding(48.dp),
-                )
-            },
-            header = {
-                FiltersHeader(
-                    access = access,
-                    onRequestAccess = onRequestAccess,
-                    type = type,
-                    onType = { vm.typeFilter.value = it },
-                )
-            },
-        )
+        ) { gridModifier ->
+            MediaGrid(
+                items = items,
+                selected = selected,
+                onOpen = { if (paneActive) previewId = it.id else onOpen(it.id) },
+                onSelectionChange = { selected = it },
+                contentPadding = padding,
+                modifier = gridModifier,
+                focusId = if (paneActive) previewId else null,
+                gridState = gridState,
+                empty = {
+                    Text(
+                        if (query.isNotBlank()) "Nothing matches “$query”." else "Nothing to show here yet.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.fillMaxWidth().padding(48.dp),
+                    )
+                },
+                header = {
+                    FiltersHeader(
+                        access = access,
+                        onRequestAccess = onRequestAccess,
+                        type = type,
+                        onType = { vm.typeFilter.value = it },
+                    )
+                },
+            )
+        }
     }
 
     hiding?.let { list ->

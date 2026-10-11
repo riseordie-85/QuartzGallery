@@ -24,6 +24,9 @@ Quartz Gallery.
   - Create, rename and delete albums; move photos/videos between albums
   - Albums are real folders, so other apps (and a PC over USB) see the same organization.
     New albums are created under `Pictures/`.
+- **Preview pane** (tablets and an unfolded Fold in landscape; switch in Settings): tapping a
+  photo shows it beside the grid with its details and favorite / share / edit / trash buttons.
+  Videos play there muted. Swipe the preview to go through photos; tap it for full screen.
 - **Selecting**: long-press a thumbnail, keep your finger down and drag to select a range
   (the grid scrolls when you reach the top or bottom). Starting on a selected photo deselects.
   Then favorite, share, move, delete or **watermark** them together.
@@ -32,6 +35,9 @@ Quartz Gallery.
 - **Favorites**: uses Android's own favorite flag, so other gallery apps see them too
 - **Viewer**: swipe, pinch/double-tap zoom, favorite, share, move, copy, rename, delete,
   set as wallpaper, add to stickers
+  - **Set as wallpaper** opens a full-screen preview: pinch and drag to frame it, rotate,
+    zoom out to fit (gaps get a soft blur of the photo), peek at a lock-screen clock, then
+    choose home, lock or both
   - **Details**: camera, lens, aperture, shutter, ISO, focal length, megapixels, frame rate,
     bitrate, HDR, size, folder and location (with "Show on map")
   - **Ultra HDR** photos display in HDR on screens that support it
@@ -76,7 +82,10 @@ Tabs along the bottom:
     photos at once from the selection bar (each gets a watermarked copy; originals aren't changed)
 
 Undo/redo at the top; hold the compare button to see the photo without color changes.
-On tablets and an unfolded Fold in landscape, the tools sit beside the picture.
+On tablets and an unfolded Fold in landscape, the tools sit beside the picture: rows wrap
+instead of scrolling sideways, Adjust shows every slider at once, and stickers, emoji, shapes
+and watermarks open right in the side panel. On regular phones the editors stay upright
+(portrait) so the tools have room.
 
 **Edit again:** saved copies remember how they were made. Tap Edit on an edited copy → **Reopen edit**
 to change its crop, filters, text and stickers later (Save updates that copy).
@@ -131,7 +140,9 @@ grants Gallery "Media management" access so it stops asking.
 ## Code map
 - `data/MediaRepository.kt` reads photos, videos and trash from MediaStore
 - `data/AlbumOps.kt` album folders, sticker folder, moving items
-- `data/MediaSaver.kt` saving, overwriting, EXIF copying, wallpaper, video stills
+- `data/MediaSaver.kt` saving, overwriting, EXIF copying, video stills
+- `ui/WallpaperScreen.kt` wallpaper preview and framing
+- `ui/PreviewPane.kt` preview pane beside the grid on wide screens
 - `data/Cutout.kt` background removal and sticker trimming
 - `ui/PhotosScreen.kt`, `ui/AlbumsScreen.kt`, `ui/TrashScreen.kt` main screens
 - `ui/MediaGrid.kt` + `ui/DragSelect.kt` shared grid with swipe-to-select

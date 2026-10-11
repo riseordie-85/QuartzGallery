@@ -132,6 +132,8 @@ fun EditorScreen(
     var emojiSheet by remember { mutableStateOf(false) }
     var shapeSheet by remember { mutableStateOf(false) }
     var watermarkSheet by remember { mutableStateOf(false) }
+    // Wide screens: the picker shown right in the side panel
+    var library by rememberSaveable { mutableStateOf(LibraryTab.STICKERS) }
 
     // Color picker and eyedropper requests from the panels
     var colorRequest by remember { mutableStateOf<ColorRequest?>(null) }
@@ -226,6 +228,16 @@ fun EditorScreen(
     }
 
     fun outSize() = EditRenderer.outputSize(history.state.geometry, session.fullW, session.fullH)
+
+    fun applyWatermark(preset: WatermarkPreset) {
+        scope.launch {
+            preset.logo?.let { uri ->
+                if (uri !in session.stickers) LayerLoader.load(context, uri)?.let { session.stickers[uri] = it }
+            }
+            preset.text?.fontKey?.let { Fonts.load(context, it) }
+            addLayer(preset.toLayer(newLayerId(), outSize(), session))
+        }
+    }
 
     fun removeBackground() {
         val base = session.base ?: return
@@ -484,6 +496,7 @@ fun EditorScreen(
     }
 
     com.tim.gallery.ui.SystemBarIcons(darkBackground = true)
+    com.tim.gallery.ui.PortraitOnPhones()
 
     BackHandler {
         if (eyedropRequest != null) eyedropRequest = null else close()
@@ -655,13 +668,16 @@ fun EditorScreen(
                             onSaveSticker = { saveCutoutAsSticker() },
                             colors = colorTools,
                         )
-                        Tool.MARKUP -> MarkupPanel(
+                        Tool.MARKUP -> Column(Modifier.fillMaxWidth()) {
+                          val wide = LocalWidePanel.current
+                          MarkupPanel(
                             selected = selected,
+                            library = if (wide) library else null,
                             onAddText = { addingText = true },
-                            onAddSticker = { stickerSheet = true },
-                            onAddEmoji = { emojiSheet = true },
-                            onAddShape = { shapeSheet = true },
-                            onAddWatermark = { watermarkSheet = true },
+                            onAddSticker = { if (wide) library = LibraryTab.STICKERS else stickerSheet = true },
+                            onAddEmoji = { if (wide) library = LibraryTab.EMOJI else emojiSheet = true },
+                            onAddShape = { if (wide) library = LibraryTab.SHAPES else shapeSheet = true },
+                            onAddWatermark = { if (wide) library = LibraryTab.WATERMARKS else watermarkSheet = true },
                             onEditText = { textEditing = it },
                             onChange = { layer, tag -> update(history.state.updateLayer(layer.id) { layer }, tag) },
                             onDone = { history.endGesture() },
@@ -687,7 +703,18 @@ fun EditorScreen(
                             },
                             onDeselect = { selectedLayer = null },
                             colors = colorTools,
-                        )
+                          )
+                          if (wide && selected == null) {
+                            MarkupLibrary(
+                                vm = vm,
+                                tab = library,
+                                onSticker = { uri -> addLayer(StickerLayer(id = newLayerId(), uri = uri)) },
+                                onEmoji = { e -> addLayer(StickerLayer(id = newLayerId(), uri = "emoji:$e", scale = 0.25f)) },
+                                onShape = { kind -> addLayer(ShapeLayer.default(newLayerId(), kind)) },
+                                onWatermark = { applyWatermark(it) },
+                            )
+                          }
+                        }
                     }
                 }
             }
@@ -720,24 +747,31 @@ fun EditorScreen(
         }
 
         // Wide screens (tablets, unfolded Fold in landscape): tools beside the picture
+        // The tool panel keeps its state when the layout switches (turning a tablet)
+        val movablePanel = remember {
+            androidx.compose.runtime.movableContentOf { wide: Boolean, panel: @Composable () -> Unit ->
+                androidx.compose.runtime.CompositionLocalProvider(LocalWidePanel provides wide) { panel() }
+            }
+        }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val panelWidth = (maxWidth * 0.36f).coerceIn(380.dp, 520.dp)
             if (maxWidth > maxHeight && maxWidth >= 600.dp) {
                 Row(Modifier.fillMaxSize()) {
                     pictureArea(Modifier.weight(1f).fillMaxHeight())
                     Column(
                         Modifier
-                            .width(380.dp)
+                            .width(panelWidth)
                             .fillMaxHeight()
                             .verticalScroll(rememberScrollState()),
                     ) {
                         toolTabs()
-                        toolPanel()
+                        movablePanel(true, toolPanel)
                     }
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
                     pictureArea(Modifier.weight(1f).fillMaxWidth())
-                    toolPanel()
+                    movablePanel(false, toolPanel)
                     toolTabs()
                 }
             }
@@ -816,13 +850,7 @@ fun EditorScreen(
             onDismiss = { watermarkSheet = false },
             onApply = { preset ->
                 watermarkSheet = false
-                scope.launch {
-                    preset.logo?.let { uri ->
-                        if (uri !in session.stickers) LayerLoader.load(context, uri)?.let { session.stickers[uri] = it }
-                    }
-                    preset.text?.fontKey?.let { Fonts.load(context, it) }
-                    addLayer(preset.toLayer(newLayerId(), outSize(), session))
-                }
+                applyWatermark(preset)
             },
         )
     }

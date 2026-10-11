@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -166,14 +165,14 @@ fun ColorRow(
     val recents by ColorRecents.recents.collectAsStateWithLifecycle()
     val extra = recents.filter { it !in colors && (allowAlpha || AColor.alpha(it) == 255) }
     val shown = (if (includeNone) listOf(AColor.TRANSPARENT) else emptyList()) + extra + colors
-    LazyRow(
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // In the wide editor panel the dots wrap onto several lines; equal cells keep them lined up
+    val wide = LocalWidePanel.current
+    val cell: @Composable (@Composable () -> Unit) -> Unit = { content ->
+        if (wide) Box(Modifier.size((dotSize + 4).dp), contentAlignment = Alignment.Center) { content() } else content()
+    }
+    PanelRow(modifier = modifier, spacing = 10.dp) {
         if (onEyedropper != null) {
-            item {
+            cell {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -188,7 +187,7 @@ fun ColorRow(
             }
         }
         if (onCustom != null) {
-            item {
+            cell {
                 val custom = selected != null && selected !in shown
                 Box(
                     contentAlignment = Alignment.Center,
@@ -213,7 +212,8 @@ fun ColorRow(
                 }
             }
         }
-        items(shown) { c ->
+        shown.forEach { c ->
+          cell {
             val isSel = c == selected
             Box(
                 contentAlignment = Alignment.Center,
@@ -229,6 +229,7 @@ fun ColorRow(
                     Text("∅", color = Color.Black, style = MaterialTheme.typography.labelLarge)
                 }
             }
+          }
         }
     }
 }

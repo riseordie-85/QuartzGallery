@@ -91,6 +91,18 @@ fun StickerSheet(
     onDismiss: () -> Unit,
     onPick: (String) -> Unit,
 ) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        StickerPicker(vm = vm, onPick = onPick)
+    }
+}
+
+/** Your stickers and the built-in packs (in a sheet, or right in the editor's side panel on wide screens). */
+@Composable
+fun StickerPicker(
+    vm: GalleryViewModel,
+    onPick: (String) -> Unit,
+    gridMaxHeight: androidx.compose.ui.unit.Dp = 480.dp,
+) {
     val stickers by vm.stickers.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var making by remember { mutableStateOf<Uri?>(null) }
@@ -101,7 +113,7 @@ fun StickerSheet(
     }
     LaunchedEffect(Unit) { packs = StickerPacks.list(context) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    Column {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp),
@@ -116,14 +128,9 @@ fun StickerSheet(
             }
         }
         if (packs.isNotEmpty()) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                item {
-                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("My stickers") })
-                }
-                itemsIndexed(packs) { i, pack ->
+            PanelRow {
+                FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("My stickers") })
+                packs.forEachIndexed { i, pack ->
                     FilterChip(selected = tab == i + 1, onClick = { tab = i + 1 }, label = { Text(pack.name) })
                 }
             }
@@ -143,7 +150,7 @@ fun StickerSheet(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.heightIn(max = 480.dp),
+                modifier = Modifier.heightIn(max = gridMaxHeight),
             ) {
                 if (pack != null) {
                     items(pack.stickers, key = { it }) { uri ->

@@ -75,3 +75,47 @@ fun ImmersiveMode() {
         onDispose { controller?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 }
+
+/**
+ * Keeps the screen upright while this composable is shown, on phones only (including a
+ * foldable's outer screen). Tablets and unfolded foldables can still turn.
+ */
+@Composable
+fun PortraitOnPhones() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isPhone = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp < 600
+    DisposableEffect(isPhone) {
+        val activity = context.findActivity()
+        if (isPhone && activity != null) PortraitLock.acquire(activity)
+        onDispose {
+            if (isPhone && activity != null) PortraitLock.release(activity)
+        }
+    }
+}
+
+/**
+ * Counts the screens asking for portrait, so overlapping ones (an editor and its dialog, or two
+ * screens during a transition) can't leave the app stuck upright or unlock too early.
+ */
+private object PortraitLock {
+    private class Hold(val before: Int) {
+        var count = 0
+    }
+
+    private val holds = java.util.WeakHashMap<android.app.Activity, Hold>()
+
+    fun acquire(activity: android.app.Activity) {
+        val hold = holds.getOrPut(activity) { Hold(activity.requestedOrientation) }
+        hold.count++
+        if (hold.count == 1) activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+    }
+
+    fun release(activity: android.app.Activity) {
+        val hold = holds[activity] ?: return
+        hold.count--
+        if (hold.count <= 0) {
+            holds.remove(activity)
+            activity.requestedOrientation = hold.before
+        }
+    }
+}

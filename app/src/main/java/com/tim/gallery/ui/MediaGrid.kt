@@ -2,6 +2,7 @@ package com.tim.gallery.ui
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import com.tim.gallery.settings.SortField
 import com.tim.gallery.settings.AppSettings
 import androidx.compose.foundation.gestures.calculateZoom
@@ -164,6 +166,10 @@ fun MediaGrid(
     groupByMonth: Boolean = true,
     badge: ((GalleryItem) -> String?)? = null,
     header: (@Composable () -> Unit)? = null,
+    /** The item shown in the preview pane: outlined, and scrolled into view when it changes. */
+    focusId: Long? = null,
+    /** Pass one from the screen so the scroll position survives layout changes (rotation, preview pane). */
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState = rememberLazyGridState(),
     empty: @Composable () -> Unit = {
         Text(
             "Nothing to show here yet.",
@@ -192,8 +198,30 @@ fun MediaGrid(
     }
     val ids = remember(sections) { sections.flatMap { s -> s.items.map { it.id } } }
     val selecting = alwaysSelecting || selected.isNotEmpty()
-    val gridState = rememberLazyGridState()
     val dragSession = remember { DragSelectSession() }
+
+    // Keep the previewed item in view (e.g. while swiping through the preview pane)
+    val scrolledTo = remember { longArrayOf(Long.MIN_VALUE) }
+    LaunchedEffect(focusId, sections) {
+        val id = focusId ?: return@LaunchedEffect
+        // Only when the previewed item changes, not on every list update (favorites, new photos...)
+        if (id == scrolledTo[0]) return@LaunchedEffect
+        if (gridState.layoutInfo.visibleItemsInfo.any { it.key == id }) {
+            scrolledTo[0] = id
+            return@LaunchedEffect
+        }
+        var index = (if (header != null) 1 else 0) + (if (items.isEmpty()) 1 else 0)
+        for (section in sections) {
+            if (section.title.isNotEmpty()) index++
+            val i = section.items.indexOfFirst { it.id == id }
+            if (i >= 0) {
+                scrolledTo[0] = id
+                gridState.animateScrollToItem(index + i)
+                return@LaunchedEffect
+            }
+            index += section.items.size
+        }
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(cellDp.dp),
@@ -232,6 +260,7 @@ fun MediaGrid(
             items(section.items, key = { it.id }, contentType = { "tile" }) { item ->
                 MediaTile(
                     item = item,
+                    focused = item.id == focusId,
                     selected = item.id in selected,
                     selecting = selecting,
                     badge = badge?.invoke(item),
@@ -250,6 +279,7 @@ fun MediaGrid(
 @Composable
 private fun MediaTile(
     item: GalleryItem,
+    focused: Boolean = false,
     selected: Boolean,
     selecting: Boolean,
     badge: String?,
@@ -260,6 +290,9 @@ private fun MediaTile(
         Modifier
             .aspectRatio(1f)
             .clickable(onClick = onClick)
+            .then(
+                if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary) else Modifier
+            )
     ) {
         Box(
             Modifier
