@@ -26,9 +26,8 @@ Quartz Gallery.
     New albums are created under `Pictures/`.
 - **Fast scroll**: while the grid scrolls, a handle appears on the right edge; drag it to fly
   through the library with a month bubble. Tap **Photos** or **Albums** again to jump to the top.
-- **Wide screens** (tablets, unfolded Fold in landscape): Photos / Albums move to a slim rail on the left.
 - **Preview pane** (tablets and an unfolded Fold in landscape; switch in Settings): tapping a
-  photo shows it on the right half, beside the grid with its details and favorite / share / edit / trash buttons.
+  photo shows it on the full right half, with the grid and the Photos / Albums bar on the left half with its details and favorite / share / edit / trash buttons.
   Videos play there muted, with −1 / +1 frame buttons (hold to keep stepping) and Capture still. Swipe the preview to go through photos; tap it for full screen.
 - **Selecting**: long-press a thumbnail, keep your finger down and drag to select a range
   (the grid scrolls when you reach the top or bottom). Starting on a selected photo deselects.

@@ -2,11 +2,8 @@ package com.tim.gallery.ui
 
 import kotlinx.coroutines.launch
 
-import androidx.compose.foundation.layout.systemBars
 
-import androidx.compose.foundation.layout.only
 
-import androidx.compose.foundation.layout.consumeWindowInsets
 
 import androidx.compose.foundation.layout.fillMaxHeight
 
@@ -82,46 +79,13 @@ object MainTabEvents {
     val reselected = kotlinx.coroutines.flow.MutableSharedFlow<MainTab>(extraBufferCapacity = 1)
 }
 
-/** Tablets and unfolded foldables held sideways get a side rail instead of a bottom bar. */
-@Composable
-fun rememberUseNavRail(): Boolean {
-    val config = androidx.compose.ui.platform.LocalConfiguration.current
-    return config.smallestScreenWidthDp >= 600 && config.screenWidthDp > config.screenHeightDp
-}
-
 /**
- * The Photos / Albums switcher: a bottom bar normally, or a slim rail down the left edge on
- * wide screens (more room for the grid and the preview pane). [content] gets the bottom bar to use.
+ * The Photos / Albums switcher. [content] gets the bottom bar to place (with the preview pane
+ * on wide screens, Photos puts it under the grid only).
  */
 @Composable
 fun MainTabsLayout(current: MainTab, onSelect: (MainTab) -> Unit, content: @Composable (bottomBar: @Composable () -> Unit) -> Unit) {
-    if (rememberUseNavRail()) {
-        Row(Modifier.fillMaxSize()) {
-            androidx.compose.material3.NavigationRail(containerColor = mainNavBarColor()) {
-                Spacer(Modifier.weight(1f))
-                MainTab.entries.forEach { tab ->
-                    androidx.compose.material3.NavigationRailItem(
-                        selected = tab == current,
-                        onClick = { if (tab != current) onSelect(tab) else MainTabEvents.reselected.tryEmit(tab) },
-                        icon = { Icon(tab.icon, contentDescription = null) },
-                        label = { Text(tab.label) },
-                        modifier = Modifier.padding(vertical = 6.dp),
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-            }
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .consumeWindowInsets(
-                        androidx.compose.foundation.layout.WindowInsets.systemBars.only(androidx.compose.foundation.layout.WindowInsetsSides.Start)
-                    )
-            ) { content {} }
-        }
-    } else {
-        content { MainTabsBar(current, onSelect) }
-    }
+    content { MainTabsBar(current, onSelect) }
 }
 
 @Composable
@@ -276,7 +240,8 @@ fun PhotosScreen(
                 )
             }
         },
-        bottomBar = { if (selected.isEmpty()) bottomBar() },
+        // With the preview pane, the Photos / Albums bar sits under the grid only (left half)
+        bottomBar = { if (selected.isEmpty() && !paneActive) bottomBar() },
     ) { padding ->
         if (loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -293,13 +258,14 @@ fun PhotosScreen(
             onEdit = onEdit,
             actions = actions,
             contentPadding = padding,
-        ) { gridModifier ->
+            bottomBar = if (selected.isEmpty()) bottomBar else null,
+        ) { gridModifier, gridPadding ->
             MediaGrid(
                 items = items,
                 selected = selected,
                 onOpen = { if (paneActive) previewId = it.id else onOpen(it.id) },
                 onSelectionChange = { selected = it },
-                contentPadding = padding,
+                contentPadding = gridPadding,
                 modifier = gridModifier,
                 focusId = if (paneActive) previewId else null,
                 gridState = gridState,

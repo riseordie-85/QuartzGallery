@@ -392,13 +392,13 @@ fun AlbumScreen(
         onEdit = onEdit,
         actions = actions,
         contentPadding = padding,
-      ) { gridModifier ->
+      ) { gridModifier, gridPadding ->
         MediaGrid(
             items = items,
             selected = selected,
             onOpen = { if (paneActive) previewId = it.id else onOpenItem(it.id) },
             onSelectionChange = { selected = it },
-            contentPadding = padding,
+            contentPadding = gridPadding,
             modifier = gridModifier,
             focusId = if (paneActive) previewId else null,
             gridState = gridState,

@@ -88,8 +88,9 @@ fun rememberPreviewPaneActive(): Boolean {
 }
 
 /**
- * The grid, plus (when [active]) a preview of [previewId] on the right. [grid] gets its
- * modifier and padding; tapping a tile should call [onPreviewChange] instead of opening it.
+ * The grid, plus (when [active]) a preview of [previewId] filling the right half. [grid] gets
+ * its modifier and padding; tapping a tile should call [onPreviewChange] instead of opening it.
+ * With the pane, [bottomBar] (Photos / Albums) sits under the grid only, on the left half.
  */
 @Composable
 fun PreviewPaneLayout(
@@ -101,17 +102,26 @@ fun PreviewPaneLayout(
     onEdit: (Long) -> Unit,
     actions: MediaActions,
     contentPadding: PaddingValues,
-    grid: @Composable (Modifier) -> Unit,
+    bottomBar: (@Composable () -> Unit)? = null,
+    grid: @Composable (Modifier, PaddingValues) -> Unit,
 ) {
     if (!active) {
-        grid(Modifier.fillMaxSize())
+        grid(Modifier.fillMaxSize(), contentPadding)
         return
     }
+    val top = contentPadding.calculateTopPadding()
+    val bottom = contentPadding.calculateBottomPadding()
     Row(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(0.5f).fillMaxHeight()) { grid(Modifier.fillMaxSize()) }
+        Column(Modifier.weight(0.5f).fillMaxHeight()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                // With the bar right below it, the grid needs no room at the bottom
+                grid(Modifier.fillMaxSize(), PaddingValues(top = top, bottom = if (bottomBar != null) 0.dp else bottom))
+            }
+            bottomBar?.invoke()
+        }
         VerticalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            modifier = Modifier.padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding()),
+            modifier = Modifier.padding(top = top),
         )
         PreviewPane(
             items = items,
@@ -123,7 +133,7 @@ fun PreviewPaneLayout(
             modifier = Modifier
                 .weight(0.5f)
                 .fillMaxHeight()
-                .padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding()),
+                .padding(top = top, bottom = bottom),
         )
     }
 }
