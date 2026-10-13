@@ -1,5 +1,7 @@
 package com.tim.gallery.ui
 
+import kotlinx.coroutines.launch
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -86,6 +88,18 @@ fun AlbumsScreen(
     val canManageMedia = rememberCanManageMedia()
     var creating by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    val albumsGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    // Tap "Albums" again: back to the top
+    LaunchedEffect(Unit) {
+        MainTabEvents.reselected.collect { tab ->
+            if (tab == MainTab.ALBUMS) {
+                launch {
+                    if (albumsGrid.firstVisibleItemIndex > 40) albumsGrid.scrollToItem(20)
+                    albumsGrid.animateScrollToItem(0)
+                }
+            }
+        }
+    }
 
     Scaffold(
         containerColor = mainContainerColor(),
@@ -131,6 +145,7 @@ fun AlbumsScreen(
             ),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
+            state = albumsGrid,
             modifier = Modifier.fillMaxSize(),
         ) {
             items(albums, key = { it.key }) { album ->

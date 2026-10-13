@@ -44,7 +44,7 @@ import com.tim.gallery.ui.SettingsScreen
 import com.tim.gallery.personal.PersonalScreen
 import com.tim.gallery.ui.TrashScreen
 import com.tim.gallery.ui.MainTab
-import com.tim.gallery.ui.MainTabsBar
+import com.tim.gallery.ui.MainTabsLayout
 import com.tim.gallery.ui.PermissionGate
 import com.tim.gallery.ui.PhotosScreen
 import com.tim.gallery.ui.PickerScreen
@@ -102,6 +102,7 @@ private fun GalleryRoot() {
         ) {
             composable(MainTab.PHOTOS.route) {
                 MainBackground {
+                  MainTabsLayout(MainTab.PHOTOS, onSelect = { nav.switchTab(it) }) { tabsBar ->
                     PhotosScreen(
                         vm = vm,
                         access = access,
@@ -110,12 +111,14 @@ private fun GalleryRoot() {
                         onOpenSettings = { nav.navigate("settings") },
                         onOpenPersonal = { nav.navigate("personal") },
                         onEdit = { id -> nav.navigate(if (vm.find(id)?.isVideo == true) "videoedit/$id" else "editor/$id") },
-                        bottomBar = { MainTabsBar(MainTab.PHOTOS) { nav.switchTab(it) } },
+                        bottomBar = tabsBar,
                     )
+                  }
                 }
             }
             composable(MainTab.ALBUMS.route) {
                 MainBackground {
+                  MainTabsLayout(MainTab.ALBUMS, onSelect = { nav.switchTab(it) }) { tabsBar ->
                     AlbumsScreen(
                         vm = vm,
                         onOpenAlbum = { key -> nav.navigate("album/${encodeKey(key)}") },
@@ -124,8 +127,9 @@ private fun GalleryRoot() {
                         onOpenMap = { nav.navigate("map") },
                         onOpenCleanup = { nav.navigate("cleanup") },
                         onOpenSettings = { nav.navigate("settings") },
-                        bottomBar = { MainTabsBar(MainTab.ALBUMS) { nav.switchTab(it) } },
+                        bottomBar = tabsBar,
                     )
+                  }
                 }
             }
             composable("trash") {

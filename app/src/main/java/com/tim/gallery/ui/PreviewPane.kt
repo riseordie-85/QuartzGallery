@@ -108,7 +108,7 @@ fun PreviewPaneLayout(
         return
     }
     Row(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(0.58f).fillMaxHeight()) { grid(Modifier.fillMaxSize()) }
+        Box(Modifier.weight(0.5f).fillMaxHeight()) { grid(Modifier.fillMaxSize()) }
         VerticalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             modifier = Modifier.padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding()),
@@ -121,7 +121,7 @@ fun PreviewPaneLayout(
             onEdit = onEdit,
             actions = actions,
             modifier = Modifier
-                .weight(0.42f)
+                .weight(0.5f)
                 .fillMaxHeight()
                 .padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding()),
         )

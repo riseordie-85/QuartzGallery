@@ -24,8 +24,11 @@ Quartz Gallery.
   - Create, rename and delete albums; move photos/videos between albums
   - Albums are real folders, so other apps (and a PC over USB) see the same organization.
     New albums are created under `Pictures/`.
+- **Fast scroll**: while the grid scrolls, a handle appears on the right edge; drag it to fly
+  through the library with a month bubble. Tap **Photos** or **Albums** again to jump to the top.
+- **Wide screens** (tablets, unfolded Fold in landscape): Photos / Albums move to a slim rail on the left.
 - **Preview pane** (tablets and an unfolded Fold in landscape; switch in Settings): tapping a
-  photo shows it beside the grid with its details and favorite / share / edit / trash buttons.
+  photo shows it on the right half, beside the grid with its details and favorite / share / edit / trash buttons.
   Videos play there muted, with −1 / +1 frame buttons (hold to keep stepping) and Capture still. Swipe the preview to go through photos; tap it for full screen.
 - **Selecting**: long-press a thumbnail, keep your finger down and drag to select a range
   (the grid scrolls when you reach the top or bottom). Starting on a selected photo deselects.
@@ -50,6 +53,7 @@ Quartz Gallery.
   screen at the video's full resolution (works for every format, including WebM)
 - **Video tools** (Trim in the viewer): pick a range on the filmstrip, then
   - **Save clip** — instant, no quality loss (starts at the nearest keyframe), optionally without sound
+  - **Rotate** (left / right): saved clips are rotated losslessly (MP4); GIFs and frames are rotated too
   - **Save GIF** — small / medium / large, 10–24 fps, up to 20 seconds
   - **Save frames** — every frame, every 2nd or 5th, or one per second, as full-resolution photos
 - **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, an optional

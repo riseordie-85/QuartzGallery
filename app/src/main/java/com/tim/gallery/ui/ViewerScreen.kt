@@ -63,6 +63,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -143,8 +144,19 @@ fun ViewerScreen(
     }
 
     // Stay on the same photo if the list changes order (sorting, renames, items arriving)
-    var currentId by remember { mutableStateOf(startId) }
-    LaunchedEffect(pagerState.currentPage) { items.getOrNull(pagerState.currentPage)?.id?.let { currentId = it } }
+    // Saved, so coming back from the video player (or any other screen) returns to the same item
+    // even if the list shifted meanwhile (e.g. a new photo arrived at the top)
+    var currentId by rememberSaveable { mutableLongStateOf(startId) }
+    val pageSynced = remember { booleanArrayOf(false) }
+    LaunchedEffect(pagerState.currentPage) {
+        // On return, the restored page number may point at a different item now: let the
+        // list check below move to the remembered item first
+        if (!pageSynced[0]) {
+            pageSynced[0] = true
+            return@LaunchedEffect
+        }
+        items.getOrNull(pagerState.currentPage)?.id?.let { currentId = it }
+    }
     LaunchedEffect(items) {
         val idx = items.indexOfFirst { it.id == currentId }
         if (idx >= 0 && idx != pagerState.currentPage) {

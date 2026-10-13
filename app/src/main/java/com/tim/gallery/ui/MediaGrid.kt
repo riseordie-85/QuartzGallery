@@ -1,5 +1,17 @@
 package com.tim.gallery.ui
 
+import kotlin.math.roundToInt
+
+import kotlinx.coroutines.launch
+
+import androidx.compose.ui.graphics.graphicsLayer
+
+import androidx.compose.foundation.layout.fillMaxHeight
+
+import androidx.compose.foundation.layout.height
+
+import androidx.compose.foundation.layout.offset
+
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -223,56 +235,86 @@ fun MediaGrid(
         }
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(cellDp.dp),
-        state = gridState,
-        contentPadding = contentPadding,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = modifier
-            .fillMaxSize()
-            .pinchToResize { AppSettings.stepGrid(it) }
-            .dragToSelect(
-                state = gridState,
-                ids = ids,
-                selected = selected,
-                contentPadding = contentPadding,
-                drag = dragSession,
-                onSelectionChange = onSelectionChange,
-            ),
-    ) {
-        if (header != null) {
-            item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { header() }
+    // For the fast scroller's bubble: which month a grid position belongs to
+    val sectionStarts = remember(sections, header != null, items.isEmpty()) {
+        var index = (if (header != null) 1 else 0) + (if (items.isEmpty()) 1 else 0)
+        sections.map { section ->
+            val start = index
+            index += (if (section.title.isNotEmpty()) 1 else 0) + section.items.size
+            start to section
         }
-        if (items.isEmpty()) {
-            item(key = "empty", span = { GridItemSpan(maxLineSpan) }, contentType = "empty") { empty() }
+    }
+    val labelAt: (Int) -> String? = { gridIndex ->
+        val i = sectionStarts.indexOfLast { it.first <= gridIndex }
+        sectionStarts.getOrNull(i)?.let { (start, section) ->
+            section.title.ifEmpty {
+                // Not grouped by month: use the date of the item there
+                val within = (gridIndex - start).coerceIn(0, section.items.lastIndex)
+                section.items.getOrNull(within)?.let { monthLabel(it.dateMillis) }
+            }
         }
-        sections.forEach { section ->
-            if (section.title.isNotEmpty()) {
-                item(key = "h_${section.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
-                    Text(
-                        section.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 6.dp),
+    }
+
+    val fastScroll = remember { FastScrollState() }
+    Box(modifier.fastScrollGestures(fastScroll, gridState)) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(cellDp.dp),
+            state = gridState,
+            contentPadding = contentPadding,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .pinchToResize { AppSettings.stepGrid(it) }
+                .dragToSelect(
+                    state = gridState,
+                    ids = ids,
+                    selected = selected,
+                    contentPadding = contentPadding,
+                    drag = dragSession,
+                    onSelectionChange = onSelectionChange,
+                ),
+        ) {
+            if (header != null) {
+                item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") { header() }
+            }
+            if (items.isEmpty()) {
+                item(key = "empty", span = { GridItemSpan(maxLineSpan) }, contentType = "empty") { empty() }
+            }
+            sections.forEach { section ->
+                if (section.title.isNotEmpty()) {
+                    item(key = "h_${section.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
+                        Text(
+                            section.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 6.dp),
+                        )
+                    }
+                }
+                items(section.items, key = { it.id }, contentType = { "tile" }) { item ->
+                    MediaTile(
+                        item = item,
+                        focused = item.id == focusId,
+                        selected = item.id in selected,
+                        selecting = selecting,
+                        badge = badge?.invoke(item),
+                        onClick = {
+                            // A long-press that started a drag-selection also "taps" on release; skip it
+                            if (!dragSession.active) {
+                                if (selecting) onSelectionChange(selected.toggle(item.id)) else onOpen(item)
+                            }
+                        },
                     )
                 }
             }
-            items(section.items, key = { it.id }, contentType = { "tile" }) { item ->
-                MediaTile(
-                    item = item,
-                    focused = item.id == focusId,
-                    selected = item.id in selected,
-                    selecting = selecting,
-                    badge = badge?.invoke(item),
-                    onClick = {
-                        // A long-press that started a drag-selection also "taps" on release; skip it
-                        if (!dragSession.active) {
-                            if (selecting) onSelectionChange(selected.toggle(item.id)) else onOpen(item)
-                        }
-                    },
-                )
-            }
         }
+        FastScroller(
+            fs = fastScroll,
+            state = gridState,
+            labelAt = labelAt,
+            topPadding = contentPadding.calculateTopPadding(),
+            bottomPadding = contentPadding.calculateBottomPadding(),
+        )
     }
 }
 
@@ -659,5 +701,157 @@ fun SortButton() {
                 )
             }
         }
+    }
+}
+
+private val monthFormat = java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.getDefault())
+
+private fun monthLabel(ms: Long): String =
+    java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).format(monthFormat)
+
+/** Shared between the fast scroller's drawing and its touch handling (on the grid's parent). */
+private class FastScrollState {
+    var enabled by mutableStateOf(false)
+    var shown by mutableStateOf(false)
+    var dragging by mutableStateOf(false)
+    var dragFraction by androidx.compose.runtime.mutableFloatStateOf(0f)
+    // Geometry in px, set by the scroller's layout
+    var fraction = 0f
+    var trackTop = 0f
+    var trackPx = 1f
+    var thumbPx = 1f
+    var coroutineScope: kotlinx.coroutines.CoroutineScope? = null
+    var scrollJob: kotlinx.coroutines.Job? = null
+}
+
+/** Which grid position a scroller fraction lands on (the same mapping the handle uses). */
+private fun scrollTarget(state: androidx.compose.foundation.lazy.grid.LazyGridState, f: Float): Int {
+    val info = state.layoutInfo
+    val span = (info.totalItemsCount - info.visibleItemsInfo.size).coerceAtLeast(0)
+    return (f * span).roundToInt().coerceIn(0, (info.totalItemsCount - 1).coerceAtLeast(0))
+}
+
+/**
+ * Grabbing the fast-scroll handle. Runs on the grid's parent before the grid sees the touch,
+ * and only takes touches that land on the handle; everything else goes to the grid as usual.
+ */
+private fun Modifier.fastScrollGestures(
+    fs: FastScrollState,
+    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+): Modifier = pointerInput(fs, state) {
+    val touchWidth = 48.dp.toPx()
+    val slack = 16.dp.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+        if (!fs.enabled || !fs.shown) return@awaitEachGesture
+        if (down.position.x < size.width - touchWidth) return@awaitEachGesture
+        val thumbTop = fs.trackTop + fs.fraction * fs.trackPx
+        if (down.position.y < thumbTop - slack || down.position.y > thumbTop + fs.thumbPx + slack) return@awaitEachGesture
+        down.consume()
+        val grab = (down.position.y - thumbTop).coerceIn(0f, fs.thumbPx)
+        try {
+            fs.dragFraction = fs.fraction
+            fs.dragging = true
+            while (true) {
+                val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                // Swallow the lift too, so the tile under the handle doesn't get a tap
+                change.consume()
+                if (!change.pressed) break
+                val f = ((change.position.y - grab - fs.trackTop) / fs.trackPx).coerceIn(0f, 1f)
+                fs.dragFraction = f
+                fs.scrollJob?.cancel()
+                fs.scrollJob = fs.coroutineScope?.launch { state.scrollToItem(scrollTarget(state, f)) }
+            }
+        } finally {
+            fs.dragging = false
+        }
+    }
+}
+
+/**
+ * Fast scrolling: a handle on the right edge that appears while the grid scrolls. Drag it to
+ * fly through the whole library; a bubble shows the month you're at. Touches go to the handle
+ * only when they land on it.
+ */
+@Composable
+private fun FastScroller(
+    fs: FastScrollState,
+    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+    labelAt: (Int) -> String?,
+    topPadding: androidx.compose.ui.unit.Dp,
+    bottomPadding: androidx.compose.ui.unit.Dp,
+) {
+    fs.coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    val total by remember(state) { androidx.compose.runtime.derivedStateOf { state.layoutInfo.totalItemsCount } }
+    val visible by remember(state) { androidx.compose.runtime.derivedStateOf { state.layoutInfo.visibleItemsInfo.size } }
+    // Only worth it for long lists
+    fs.enabled = total >= 80 && total >= visible * 4
+    val scrolling = state.isScrollInProgress
+    LaunchedEffect(scrolling, fs.dragging) {
+        if (scrolling || fs.dragging) {
+            fs.shown = true
+        } else {
+            kotlinx.coroutines.delay(1500)
+            fs.shown = false
+        }
+    }
+    if (!fs.enabled) return
+    val alpha by androidx.compose.animation.core.animateFloatAsState(if (fs.shown) 1f else 0f, label = "scrollerAlpha")
+    if (alpha == 0f && !fs.shown) return
+
+    val listFraction by remember(state) {
+        androidx.compose.runtime.derivedStateOf {
+            val info = state.layoutInfo
+            val span = info.totalItemsCount - info.visibleItemsInfo.size
+            if (span <= 0) 0f else (state.firstVisibleItemIndex.toFloat() / span).coerceIn(0f, 1f)
+        }
+    }
+    val fraction = if (fs.dragging) fs.dragFraction else listFraction
+
+    androidx.compose.foundation.layout.BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .padding(top = topPadding + 8.dp, bottom = bottomPadding + 8.dp)
+            .graphicsLayer { this.alpha = alpha }
+    ) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val thumbH = 52.dp
+        val trackPx = with(density) { (maxHeight - thumbH).toPx() }.coerceAtLeast(1f)
+        fs.fraction = fraction
+        fs.trackTop = with(density) { (topPadding + 8.dp).toPx() }
+        fs.trackPx = trackPx
+        fs.thumbPx = with(density) { thumbH.toPx() }
+        val thumbY = with(density) { (fraction * trackPx).toDp() }
+
+        // Month bubble while dragging
+        if (fs.dragging) {
+            labelAt(scrollTarget(state, fs.dragFraction))?.let { label ->
+                Text(
+                    label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 44.dp)
+                        .offset(y = thumbY + 8.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
+        }
+        // The handle
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset(y = thumbY)
+                .padding(end = 4.dp)
+                .width(if (fs.dragging) 10.dp else 6.dp)
+                .height(thumbH)
+                .background(
+                    if (fs.dragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    RoundedCornerShape(5.dp),
+                )
+        )
     }
 }

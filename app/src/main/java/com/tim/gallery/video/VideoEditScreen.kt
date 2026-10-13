@@ -1,5 +1,13 @@
 package com.tim.gallery.video
 
+import kotlin.math.min
+
+import androidx.compose.ui.graphics.graphicsLayer
+
+import androidx.compose.material.icons.automirrored.filled.RotateRight
+
+import androidx.compose.material.icons.automirrored.filled.RotateLeft
+
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -75,7 +83,6 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
-import androidx.media3.ui.PlayerView
 import com.tim.gallery.GalleryViewModel
 import com.tim.gallery.data.GalleryItem
 import com.tim.gallery.ui.SystemBarIcons
@@ -102,14 +109,20 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
     SystemBarIcons(darkBackground = true)
     com.tim.gallery.ui.PortraitOnPhones()
 
+    var infoLoaded by remember { mutableStateOf(false) }
     val info by produceState<VideoInfo?>(null, item.id) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { VideoTools.info(context, item.uri) }
+        infoLoaded = true
     }
+    val isWebm = item.mimeType.contains("webm", ignoreCase = true) || item.name.endsWith(".webm", ignoreCase = true)
     val durationMs = max(1L, info?.durationMs ?: item.durationMs)
     var startMs by remember { mutableLongStateOf(0L) }
     var endMs by remember { mutableLongStateOf(-1L) }
     val end = if (endMs < 0) durationMs else endMs
     var mute by remember { mutableStateOf(false) }
+    // Rotation in quarter turns clockwise (kept unwrapped so the preview animates the short way)
+    var turnsTotal by remember { mutableIntStateOf(0) }
+    val turns = ((turnsTotal % 4) + 4) % 4
     var playing by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
 
@@ -192,18 +205,39 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
             IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White) }
             Text("Video tools", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            IconButton(onClick = { turnsTotal -= 1 }, enabled = exporting == null) {
+                Icon(Icons.AutoMirrored.Filled.RotateLeft, contentDescription = "Rotate left", tint = Color.White)
+            }
+            IconButton(onClick = { turnsTotal += 1 }, enabled = exporting == null) {
+                Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = "Rotate right", tint = Color.White)
+            }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            AndroidView(
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            // Turned sideways, the picture is shrunk to still fit the box
+            val boxW = constraints.maxWidth.toFloat()
+            val boxH = constraints.maxHeight.toFloat()
+            val vw = (info?.shownWidth ?: item.width).coerceAtLeast(1).toFloat()
+            val vh = (info?.shownHeight ?: item.height).coerceAtLeast(1).toFloat()
+            val fit = min(boxW / vw, boxH / vh)
+            val sidewaysScale = min(boxW / (vh * fit), boxH / (vw * fit))
+            val angle by androidx.compose.animation.core.animateFloatAsState(turnsTotal * 90f, label = "videoTurn")
+            val scale by androidx.compose.animation.core.animateFloatAsState(if (turns % 2 == 1) sidewaysScale else 1f, label = "videoTurnScale")
+            // A TextureView (not the player's usual SurfaceView) so the preview can be turned
+            val dens = LocalDensity.current
+            // Shown once the video's real (turned-upright) size is known, so it never looks stretched
+            if (infoLoaded) AndroidView(
                 factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        useController = false
-                        setShutterBackgroundColor(android.graphics.Color.BLACK)
-                        this.player = player
-                    }
+                    android.view.TextureView(ctx).also { player.setVideoTextureView(it) }
                 },
-                modifier = Modifier.fillMaxSize(),
+                onRelease = { player.clearVideoTextureView(it) },
+                modifier = Modifier
+                    .size(with(dens) { (vw * fit).toDp() }, with(dens) { (vh * fit).toDp() })
+                    .graphicsLayer {
+                        rotationZ = angle
+                        scaleX = scale
+                        scaleY = scale
+                    },
             )
             IconButton(
                 onClick = {
@@ -247,7 +281,8 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
             modifier = Modifier.fillMaxWidth().height(stripHeight).padding(horizontal = 16.dp),
         )
         Text(
-            "Drag the ends to choose the part you want. Clips start at the nearest keyframe, so they may begin a moment earlier.",
+            if (isWebm && turns != 0) "WebM videos can't be saved rotated (Android can't mark them as turned). Save GIF and Save frames still work rotated."
+            else "Drag the ends to choose the part you want. Clips start at the nearest keyframe, so they may begin a moment earlier.",
             color = Color.White.copy(alpha = 0.6f),
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -260,10 +295,11 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
             horizontalArrangement = Arrangement.SpaceEvenly,
             modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
         ) {
-            ExportButton(Icons.Outlined.ContentCut, "Save clip", enabled = exporting == null && rangeMs > 0) {
+            ExportButton(Icons.Outlined.ContentCut, "Save clip", enabled = exporting == null && rangeMs > 0 && !(isWebm && turns != 0)) {
                 runExport(Export.CLIP) {
-                    VideoTools.trim(context, item, startMs, end, mute) { progress = it }
-                    "Saved the clip next to the original"
+                    VideoTools.trim(context, item, startMs, end, mute, turns) { progress = it }
+                    if (turns != 0 && startMs <= 0 && end >= durationMs) "Saved the rotated video next to the original"
+                    else "Saved the clip next to the original"
                 }
             }
             ExportButton(Icons.Outlined.Gif, "Save GIF", enabled = exporting == null && rangeMs > 0) { gifDialog = true }
@@ -321,7 +357,7 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
                 TextButton(enabled = !tooLong, onClick = {
                     gifDialog = false
                     runExport(Export.GIF) {
-                        VideoTools.saveGif(context, item, startMs, end, width, gifFps) { progress = it }
+                        VideoTools.saveGif(context, item, startMs, end, width, gifFps, turns) { progress = it }
                         "GIF saved to Pictures/Gallery"
                     }
                 }) { Text("Save") }
@@ -360,7 +396,7 @@ fun VideoEditScreen(vm: GalleryViewModel, item: GalleryItem, onClose: () -> Unit
                 TextButton(enabled = !tooMany, onClick = {
                     framesDialog = false
                     runExport(Export.FRAMES) {
-                        val n = VideoTools.saveFrames(context, item, startMs, end, step, count) { progress = it }
+                        val n = VideoTools.saveFrames(context, item, startMs, end, step, count, turns) { progress = it }
                         "Saved $n frames"
                     }
                 }) { Text("Save") }

@@ -95,6 +95,8 @@ object VideoTools {
         startMs: Long,
         endMs: Long,
         mute: Boolean,
+        /** Extra quarter turns clockwise (0–3). Lossless: only the video's rotation tag changes. */
+        quarterTurns: Int = 0,
         onProgress: (Float) -> Unit,
     ): Uri = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
@@ -136,7 +138,11 @@ object VideoTools {
                 if (f.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) maxInput = max(maxInput, f.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
             }
             val info = info(context, item.uri)
-            if (info != null && info.rotation != 0) m.setOrientationHint(info.rotation)
+            val rotation = (((info?.rotation ?: 0) + quarterTurns * 90) % 360 + 360) % 360
+            if (rotation != 0) {
+                if (webm && quarterTurns % 4 != 0) throw IOException("WebM videos can't be rotated (Android can't tag them). MP4 videos can.")
+                runCatching { m.setOrientationHint(rotation) }
+            }
             Metadata.parseIso6709(
                 runCatching {
                     MediaMetadataRetriever().let { r ->
@@ -200,10 +206,12 @@ object VideoTools {
             val ext = if (webm) "webm" else "mp4"
             val mime = if (webm) "video/webm" else "video/mp4"
             val stem = item.name.substringBeforeLast('.').ifBlank { "video" }
+            val wholeVideo = startMs <= 0 && info != null && endMs >= info.durationMs - 50
+            val suffix = if (wholeVideo && quarterTurns % 4 != 0) "rotated" else "clip"
             saveVideoFile(
                 context = context,
                 file = tmp,
-                displayName = "${stem}_clip_${System.currentTimeMillis() % 100000}.$ext",
+                displayName = "${stem}_${suffix}_${System.currentTimeMillis() % 100000}.$ext",
                 mime = mime,
                 relativePath = item.relativePath,
                 dateTaken = item.dateMillis + max(0L, (if (firstUs >= 0) firstUs else startUs) / 1000),
@@ -264,6 +272,8 @@ object VideoTools {
         endMs: Long,
         stepFrames: Int,
         maxPx: Int,
+        /** Extra quarter turns clockwise for every frame. */
+        quarterTurns: Int = 0,
         onFrame: suspend (index: Int, timeMs: Long, frame: Bitmap) -> Unit,
     ): Int = withContext(Dispatchers.IO) {
         val info = info(context, uri) ?: throw IOException("Can't read this video")
@@ -273,14 +283,22 @@ object VideoTools {
             r.setDataSource(context, uri)
             val fps = info.fps
             val step = max(1, stepFrames)
+            val turns = ((quarterTurns % 4) + 4) % 4
+            fun turned(b: Bitmap): Bitmap {
+                if (turns == 0) return b
+                val m = android.graphics.Matrix().apply { postRotate(turns * 90f) }
+                val r = Bitmap.createBitmap(b, 0, 0, b.width, b.height, m, true)
+                if (r !== b) b.recycle()
+                return r
+            }
             fun scaled(b: Bitmap): Bitmap {
-                if (maxPx <= 0) return b
+                if (maxPx <= 0) return turned(b)
                 val longest = max(b.width, b.height)
-                if (longest <= maxPx) return b
+                if (longest <= maxPx) return turned(b)
                 val k = maxPx.toFloat() / longest
                 val s = Bitmap.createScaledBitmap(b, (b.width * k).roundToInt().coerceAtLeast(1), (b.height * k).roundToInt().coerceAtLeast(1), true)
                 if (s !== b) b.recycle()
-                return s
+                return turned(s)
             }
             if (info.frameCount > 0) {
                 val first = (startMs / 1000f * fps).roundToInt().coerceIn(0, (info.frameCount - 1).toInt())
@@ -347,12 +365,16 @@ object VideoTools {
         endMs: Long,
         widthPx: Int,
         fps: Int,
+        quarterTurns: Int = 0,
         onProgress: (Float) -> Unit,
     ): Uri = withContext(Dispatchers.IO) {
         val info = info(context, item.uri) ?: throw IOException("Can't read this video")
         // Some files don't report their size; fall back to the gallery's numbers, then 16:9
-        val srcW = info.shownWidth.takeIf { it > 0 } ?: item.width.takeIf { it > 0 } ?: 1920
-        val srcH = info.shownHeight.takeIf { it > 0 } ?: item.height.takeIf { it > 0 } ?: 1080
+        val shownW = info.shownWidth.takeIf { it > 0 } ?: item.width.takeIf { it > 0 } ?: 1920
+        val shownH = info.shownHeight.takeIf { it > 0 } ?: item.height.takeIf { it > 0 } ?: 1080
+        val sideways = quarterTurns % 2 != 0
+        val srcW = if (sideways) shownH else shownW
+        val srcH = if (sideways) shownW else shownH
         val w = min(widthPx, max(16, srcW))
         val h = max(2, (w.toFloat() * srcH / max(1, srcW)).roundToInt()) and 1.inv()
         val sourceStep = max(1, (info.fps / fps).roundToInt())
@@ -362,7 +384,7 @@ object VideoTools {
         try {
             tmp.outputStream().buffered().use { out ->
                 val gif = GifEncoder(out, w, h, delayMs)
-                frames(context, item.uri, startMs, endMs, sourceStep, 0) { i, _, frame ->
+                frames(context, item.uri, startMs, endMs, sourceStep, max(w, h), quarterTurns) { i, _, frame ->
                     val fitted = Bitmap.createScaledBitmap(frame, w, h, true)
                     gif.addFrame(fitted)
                     if (fitted !== frame) fitted.recycle()
@@ -387,12 +409,13 @@ object VideoTools {
         endMs: Long,
         stepFrames: Int,
         expected: Int,
+        quarterTurns: Int = 0,
         onProgress: (Float) -> Unit,
     ): Int {
         val stem = item.name.substringBeforeLast('.').ifBlank { "video" }
         val folder = "Pictures/${stem.take(60)} frames/"
         var saved = 0
-        frames(context, item.uri, startMs, endMs, stepFrames, 0) { i, timeMs, frame ->
+        frames(context, item.uri, startMs, endMs, stepFrames, 0, quarterTurns) { i, timeMs, frame ->
             val uri = MediaSaver.saveBitmap(
                 context = context,
                 bitmap = frame,

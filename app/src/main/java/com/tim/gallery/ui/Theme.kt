@@ -112,7 +112,13 @@ fun MainBackground(content: @Composable () -> Unit) {
     SystemBarIcons(dark)
     Box(Modifier.fillMaxSize().drawBehind { drawRect(gradientBrush(g, size)) }) {
         MaterialTheme(colorScheme = galleryColorScheme(LocalContext.current, dark)) {
-            CompositionLocalProvider(LocalGradientActive provides true, content = content)
+            // Text without its own color (month headings, names...) follows the gradient too;
+            // otherwise it falls back to black on the see-through background
+            CompositionLocalProvider(
+                LocalGradientActive provides true,
+                androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                content = content,
+            )
         }
     }
 }

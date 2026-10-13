@@ -1,5 +1,17 @@
 package com.tim.gallery.ui
 
+import kotlinx.coroutines.launch
+
+import androidx.compose.foundation.layout.systemBars
+
+import androidx.compose.foundation.layout.only
+
+import androidx.compose.foundation.layout.consumeWindowInsets
+
+import androidx.compose.foundation.layout.fillMaxHeight
+
+import androidx.compose.foundation.layout.Spacer
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,13 +77,60 @@ enum class MainTab(val route: String, val label: String, val icon: ImageVector) 
     ALBUMS("albums", "Albums", Icons.Outlined.PhotoAlbum),
 }
 
+/** Tapping the tab you're already on: that screen jumps back to the top. */
+object MainTabEvents {
+    val reselected = kotlinx.coroutines.flow.MutableSharedFlow<MainTab>(extraBufferCapacity = 1)
+}
+
+/** Tablets and unfolded foldables held sideways get a side rail instead of a bottom bar. */
+@Composable
+fun rememberUseNavRail(): Boolean {
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    return config.smallestScreenWidthDp >= 600 && config.screenWidthDp > config.screenHeightDp
+}
+
+/**
+ * The Photos / Albums switcher: a bottom bar normally, or a slim rail down the left edge on
+ * wide screens (more room for the grid and the preview pane). [content] gets the bottom bar to use.
+ */
+@Composable
+fun MainTabsLayout(current: MainTab, onSelect: (MainTab) -> Unit, content: @Composable (bottomBar: @Composable () -> Unit) -> Unit) {
+    if (rememberUseNavRail()) {
+        Row(Modifier.fillMaxSize()) {
+            androidx.compose.material3.NavigationRail(containerColor = mainNavBarColor()) {
+                Spacer(Modifier.weight(1f))
+                MainTab.entries.forEach { tab ->
+                    androidx.compose.material3.NavigationRailItem(
+                        selected = tab == current,
+                        onClick = { if (tab != current) onSelect(tab) else MainTabEvents.reselected.tryEmit(tab) },
+                        icon = { Icon(tab.icon, contentDescription = null) },
+                        label = { Text(tab.label) },
+                        modifier = Modifier.padding(vertical = 6.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+            }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .consumeWindowInsets(
+                        androidx.compose.foundation.layout.WindowInsets.systemBars.only(androidx.compose.foundation.layout.WindowInsetsSides.Start)
+                    )
+            ) { content {} }
+        }
+    } else {
+        content { MainTabsBar(current, onSelect) }
+    }
+}
+
 @Composable
 fun MainTabsBar(current: MainTab, onSelect: (MainTab) -> Unit) {
     NavigationBar(containerColor = mainNavBarColor()) {
         MainTab.entries.forEach { tab ->
             NavigationBarItem(
                 selected = tab == current,
-                onClick = { if (tab != current) onSelect(tab) },
+                onClick = { if (tab != current) onSelect(tab) else MainTabEvents.reselected.tryEmit(tab) },
                 icon = { Icon(tab.icon, contentDescription = null) },
                 label = { Text(tab.label) },
             )
@@ -130,6 +189,19 @@ fun PhotosScreen(
     }
 
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    // Tap "Photos" again: back to the top
+    LaunchedEffect(Unit) {
+        MainTabEvents.reselected.collect { tab ->
+            if (tab == MainTab.PHOTOS) {
+                scrollBehavior.state.heightOffset = 0f
+                // Its own job: touching the grid mid-scroll cancels just this scroll, not the listener
+                launch {
+                    if (gridState.firstVisibleItemIndex > 60) gridState.scrollToItem(30)
+                    gridState.animateScrollToItem(0)
+                }
+            }
+        }
+    }
 
     Scaffold(
         containerColor = mainContainerColor(),
