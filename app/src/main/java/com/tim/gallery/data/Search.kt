@@ -6,15 +6,24 @@ import java.text.DateFormatSymbols
 import java.util.Calendar
 import java.util.Locale
 
-/** Orders items for the grid. */
-fun List<GalleryItem>.sortedFor(s: SortSettings): List<GalleryItem> {
-    val cmp: Comparator<GalleryItem> = when (s.field) {
+/**
+ * Orders items for the grid. Items that tie (e.g. hundreds of downloads added in the same
+ * second, which share a date) are ordered by name, then by id, so every item always has the
+ * same place; otherwise an update to one item (like favoriting it) could move it within its tie.
+ */
+fun List<GalleryItem>.sortedFor(s: SortSettings): List<GalleryItem> = sortedWith(sortComparator(s))
+
+fun sortComparator(s: SortSettings): Comparator<GalleryItem> {
+    val main: Comparator<GalleryItem> = when (s.field) {
         SortField.TAKEN -> compareBy { it.dateMillis }
         SortField.ADDED -> compareBy { it.addedMillis }
         SortField.SIZE -> compareBy { it.sizeBytes }
         SortField.NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
     }
-    return sortedWith(if (s.descending) cmp.reversed() else cmp)
+    val cmp = main
+        .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+        .thenBy { it.id }
+    return if (s.descending) cmp.reversed() else cmp
 }
 
 /**

@@ -78,7 +78,8 @@ class MediaRepository(private val context: Context) {
                 // Items we can see now that didn't change (e.g. more photos shared with the app): reload everything
                 query(MediaStore.MATCH_EXCLUDE)
             } else {
-                (previous.filter { it.id in ids && it.id !in changedIds } + changed).sortedByDescending { it.dateMillis }
+                (previous.filter { it.id in ids && it.id !in changedIds } + changed)
+                    .sortedWith(compareByDescending<GalleryItem> { it.dateMillis }.thenByDescending { it.id })
             }
         }
         Snapshot(result, version, generation)
