@@ -103,6 +103,8 @@ fun ViewerScreen(
     onShowOnMap: (Double, Double) -> Unit = { _, _ -> },
     onEditAgain: (Long) -> Unit = {},
     onSetWallpaper: (Long) -> Unit = {},
+    /** In an album: page through only its photos or only its videos. */
+    typeFilter: com.tim.gallery.TypeFilter = com.tim.gallery.TypeFilter.ALL,
 ) {
     SystemBarIcons(darkBackground = true)
     val inTrash = albumKey == AlbumOps.TRASH_KEY
@@ -113,7 +115,10 @@ fun ViewerScreen(
             else -> vm.albumItems(albumKey)
         }
     }
-    val items by source.collectAsStateWithLifecycle()
+    val sourceItems by source.collectAsStateWithLifecycle()
+    val items = remember(sourceItems, typeFilter) {
+        if (typeFilter == com.tim.gallery.TypeFilter.ALL || albumKey == null) sourceItems else sourceItems.filter { typeFilter.matches(it) }
+    }
     val actions = rememberMediaActions(vm)
 
     if (items.isEmpty()) {

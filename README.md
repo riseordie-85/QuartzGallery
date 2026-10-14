@@ -22,6 +22,9 @@ Quartz Gallery.
   (bursts) and screenshots; selected items go to the trash
 - **Albums tab**: Favorites, every folder with photos or videos, Stickers, and Trash
   - Create, rename and delete albums; move photos/videos between albums
+  - Inside an album: **All / Photos / Videos** filter (when it has both), and **Clean up album**
+    (⋮), which moves everything that isn't a favorite to the trash (only the filtered kind if a
+    filter is on). Restorable from Trash for 30 days
   - Albums are real folders, so other apps (and a PC over USB) see the same organization.
     New albums are created under `Pictures/`.
 - **Fast scroll**: while the grid scrolls, a handle appears on the right edge; drag it to fly

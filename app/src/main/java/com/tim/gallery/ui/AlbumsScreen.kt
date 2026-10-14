@@ -265,13 +265,24 @@ fun AlbumScreen(
     vm: GalleryViewModel,
     albumKey: String,
     onBack: () -> Unit,
-    onOpenItem: (Long) -> Unit,
+    /** Opens the viewer on an item, paging through the album with the same Photos / Videos filter. */
+    onOpenItem: (Long, com.tim.gallery.TypeFilter) -> Unit,
     onAddItems: () -> Unit,
     onRenamed: (String) -> Unit,
     onOpenPersonal: () -> Unit,
     onEdit: (Long) -> Unit = {},
 ) {
-    val items by remember(albumKey) { vm.albumItems(albumKey) }.collectAsStateWithLifecycle()
+    val albumItems by remember(albumKey) { vm.albumItems(albumKey) }.collectAsStateWithLifecycle()
+    // All / Photos / Videos inside the album
+    var type by rememberSaveable(albumKey) { mutableStateOf(com.tim.gallery.TypeFilter.ALL) }
+    val items = remember(albumItems, type) { albumItems.filter { type.matches(it) } }
+    // Back to "All" once the album no longer has both kinds (the chips hide then)
+    LaunchedEffect(albumItems) {
+        if (type != com.tim.gallery.TypeFilter.ALL && !(albumItems.any { it.isVideo } && albumItems.any { !it.isVideo })) {
+            type = com.tim.gallery.TypeFilter.ALL
+        }
+    }
+    var confirmCleanup by remember { mutableStateOf(false) }
     val paneActive = rememberPreviewPaneActive()
     var previewId by rememberSaveable(albumKey) { mutableStateOf<Long?>(null) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
@@ -376,6 +387,14 @@ fun AlbumScreen(
                                         confirmDelete = true
                                     },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Clean up album") },
+                                    enabled = items.isNotEmpty(),
+                                    onClick = {
+                                        menuOpen = false
+                                        confirmCleanup = true
+                                    },
+                                )
                             }
                         }
                     },
@@ -388,7 +407,7 @@ fun AlbumScreen(
         items = items,
         previewId = previewId,
         onPreviewChange = { previewId = it },
-        onOpenFull = onOpenItem,
+        onOpenFull = { id -> onOpenItem(id, type) },
         onEdit = onEdit,
         actions = actions,
         contentPadding = padding,
@@ -396,12 +415,18 @@ fun AlbumScreen(
         MediaGrid(
             items = items,
             selected = selected,
-            onOpen = { if (paneActive) previewId = it.id else onOpenItem(it.id) },
+            onOpen = { if (paneActive) previewId = it.id else onOpenItem(it.id, type) },
             onSelectionChange = { selected = it },
             contentPadding = gridPadding,
             modifier = gridModifier,
             focusId = if (paneActive) previewId else null,
             gridState = gridState,
+            // The filter only shows when the album has both photos and videos
+            header = if (albumItems.any { it.isVideo } && albumItems.any { !it.isVideo }) {
+                { TypeFilterChips(type, { type = it }, Modifier.padding(bottom = 6.dp)) }
+            } else {
+                null
+            },
             empty = {
                 if (isFavorites || isStickers) {
                     Text(
@@ -512,6 +537,45 @@ fun AlbumScreen(
                 }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (confirmCleanup) {
+        val toTrash = remember(items) { items.filter { !it.isFavorite } }
+        val kept = items.size - toTrash.size
+        val what = when (type) {
+            com.tim.gallery.TypeFilter.ALL -> "photos and videos"
+            com.tim.gallery.TypeFilter.PHOTOS -> "photos"
+            com.tim.gallery.TypeFilter.VIDEOS -> "videos"
+        }
+        AlertDialog(
+            onDismissRequest = { confirmCleanup = false },
+            title = { Text("Clean up “$title”?") },
+            text = {
+                Text(
+                    if (toTrash.isEmpty()) {
+                        "All the $what here are favorites, so there's nothing to clean up."
+                    } else {
+                        "Moves ${toTrash.size} $what that aren't favorites to the trash. " +
+                            (if (kept > 0) "Your $kept ${if (kept == 1) "favorite stays" else "favorites stay"}. " else "") +
+                            (if (type != com.tim.gallery.TypeFilter.ALL) "Only $what are included (the filter is on). " else "") +
+                            "You can restore them from Trash for 30 days."
+                    }
+                )
+            },
+            confirmButton = {
+                if (toTrash.isNotEmpty()) {
+                    TextButton(onClick = {
+                        confirmCleanup = false
+                        actions.trash(toTrash) { ok -> if (ok) selected = emptySet() }
+                    }) { Text("Move ${toTrash.size} to trash") }
+                } else {
+                    TextButton(onClick = { confirmCleanup = false }) { Text("OK") }
+                }
+            },
+            dismissButton = {
+                if (toTrash.isNotEmpty()) TextButton(onClick = { confirmCleanup = false }) { Text("Cancel") }
+            },
         )
     }
 }

@@ -29,7 +29,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-enum class TypeFilter(val label: String) { ALL("All"), PHOTOS("Photos"), VIDEOS("Videos") }
+enum class TypeFilter(val label: String) {
+    ALL("All"), PHOTOS("Photos"), VIDEOS("Videos");
+
+    fun matches(item: com.tim.gallery.data.GalleryItem): Boolean = when (this) {
+        ALL -> true
+        PHOTOS -> !item.isVideo
+        VIDEOS -> item.isVideo
+    }
+}
 
 class GalleryViewModel(app: Application) : AndroidViewModel(app) {
 

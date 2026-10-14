@@ -182,7 +182,7 @@ private fun GalleryRoot() {
                         vm = vm,
                         albumKey = key,
                         onBack = { nav.popBackStack() },
-                        onOpenItem = { id -> nav.navigate("viewer/$id?album=${encodeKey(key)}") },
+                        onOpenItem = { id, type -> nav.navigate("viewer/$id?album=${encodeKey(key)}&type=${type.name}") },
                         onAddItems = { nav.navigate("picker/${encodeKey(key)}") },
                         onRenamed = { newKey ->
                             nav.popBackStack()
@@ -201,10 +201,15 @@ private fun GalleryRoot() {
                 )
             }
             composable(
-                "viewer/{id}?album={album}",
+                "viewer/{id}?album={album}&type={type}",
                 arguments = listOf(
                     navArgument("id") { type = NavType.LongType },
                     navArgument("album") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                    navArgument("type") {
                         type = NavType.StringType
                         nullable = true
                         defaultValue = null
@@ -215,6 +220,9 @@ private fun GalleryRoot() {
                     vm = vm,
                     startId = entry.arguments?.getLong("id") ?: 0L,
                     albumKey = entry.arguments?.getString("album")?.let { decodeKey(it) },
+                    typeFilter = entry.arguments?.getString("type")
+                        ?.let { t -> com.tim.gallery.TypeFilter.entries.firstOrNull { it.name == t } }
+                        ?: com.tim.gallery.TypeFilter.ALL,
                     onBack = { nav.popBackStack() },
                     onPlay = { id -> nav.navigate("player/$id") },
                     onEdit = { id -> nav.navigate(if (vm.find(id)?.isVideo == true) "videoedit/$id" else "editor/$id") },

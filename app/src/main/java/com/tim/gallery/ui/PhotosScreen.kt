@@ -361,23 +361,29 @@ private fun FiltersHeader(
                 }
             }
         }
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TypeFilter.entries.forEach { t ->
-                val icon: ImageVector = when (t) {
-                    TypeFilter.ALL -> Icons.Outlined.PhotoLibrary
-                    TypeFilter.PHOTOS -> Icons.Outlined.Image
-                    TypeFilter.VIDEOS -> Icons.Outlined.Videocam
-                }
-                FilterChip(
-                    selected = t == type,
-                    onClick = { onType(t) },
-                    label = { Text(t.label) },
-                    leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                )
+        TypeFilterChips(type, onType)
+    }
+}
+
+/** All / Photos / Videos. */
+@Composable
+fun TypeFilterChips(type: TypeFilter, onType: (TypeFilter) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TypeFilter.entries.forEach { t ->
+            val icon: ImageVector = when (t) {
+                TypeFilter.ALL -> Icons.Outlined.PhotoLibrary
+                TypeFilter.PHOTOS -> Icons.Outlined.Image
+                TypeFilter.VIDEOS -> Icons.Outlined.Videocam
             }
+            FilterChip(
+                selected = t == type,
+                onClick = { onType(t) },
+                label = { Text(t.label) },
+                leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            )
         }
     }
 }
