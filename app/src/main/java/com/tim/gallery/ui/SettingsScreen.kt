@@ -400,5 +400,10 @@ private fun directionLabel(angle: Float): String = when (((angle.roundToInt() % 
     else -> "${angle.roundToInt()}°"
 }
 
-private fun appVersion(context: android.content.Context): String =
-    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: ""
+/** e.g. "1.2 (build 3) · installed Oct 18, 1:16 PM" — shows which build is really on the phone. */
+private fun appVersion(context: android.content.Context): String = runCatching {
+    val info = context.packageManager.getPackageInfo(context.packageName, 0)
+    val installed = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT)
+        .format(java.util.Date(info.lastUpdateTime))
+    "${info.versionName} (build ${info.longVersionCode}) · installed $installed"
+}.getOrNull() ?: ""
