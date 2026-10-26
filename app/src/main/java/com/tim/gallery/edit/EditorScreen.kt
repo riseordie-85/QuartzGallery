@@ -154,7 +154,7 @@ fun EditorScreen(
             animatedWebp = withContext(Dispatchers.IO) { isAnimatedWebp(context, item.uri) }
         }
         val base = withContext(Dispatchers.IO) {
-            runCatching { MediaSaver.decodeUpright(context, item.uri, 4096) }.getOrNull()
+            runCatching { MediaSaver.decodeForEditing(context, item.uri) }.getOrNull()
         }
         if (base == null) {
             loadFailed = true
@@ -187,7 +187,7 @@ fun EditorScreen(
         val mode = state.cutout
         val color = state.cutoutColor
         val full = onGpu { composeCutout(session, mode, color) ?: base } ?: base
-        val preview = withContext(Dispatchers.Default) { Cutout.scaleDown(full, EditSession.PREVIEW_PX) }
+        val preview = withContext(Dispatchers.Default) { previewOf(full) }
         session.source = full
         session.preview = preview
     }

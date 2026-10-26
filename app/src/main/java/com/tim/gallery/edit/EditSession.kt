@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
 
 /** Bitmaps an editing session works with. Plain class holding Compose state. */
 class EditSession : LayerAssets {
-    /** The photo, upright, up to 4096 px. */
+    /** The photo, upright, as big as [com.tim.gallery.data.ImageLimits] allows. */
     var base: Bitmap? by mutableStateOf(null)
 
     /** [base] with the background made transparent, once "Remove background" has run. */
@@ -39,6 +39,7 @@ class EditSession : LayerAssets {
     val fullH: Float get() = base?.height?.toFloat() ?: 1f
 
     companion object {
+        /** Longest side of the small copies (filter thumbnails, the eyedropper's sample). */
         const val PREVIEW_PX = 1600
         const val THUMB_PX = 160
     }
@@ -187,4 +188,17 @@ object GeometryOps {
         }
         return g.copy(crop = crop)
     }
+}
+
+/**
+ * The live preview's copy of [full]: about 3 MP, and never more than 8192 px (or the GPU's limit) on
+ * a side. Measured by pixels, not the longest side, so a long panorama stays sharp on screen.
+ */
+fun previewOf(full: Bitmap): Bitmap {
+    val k = com.tim.gallery.data.ImageLimits.fitScale(
+        full.width, full.height,
+        minOf(8192, com.tim.gallery.data.ImageLimits.maxSide), com.tim.gallery.data.ImageLimits.PREVIEW_PIXELS,
+    )
+    if (k >= 1f) return full
+    return Bitmap.createScaledBitmap(full, (full.width * k).toInt().coerceAtLeast(1), (full.height * k).toInt().coerceAtLeast(1), true)
 }

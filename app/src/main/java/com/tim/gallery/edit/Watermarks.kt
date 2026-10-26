@@ -864,7 +864,7 @@ fun BatchWatermarkDialog(items: List<GalleryItem>, onDismiss: () -> Unit, onFini
 /** Watermarks one photo and saves the copy. Returns true on success. */
 private suspend fun watermarkOne(context: Context, item: GalleryItem, preset: WatermarkPreset): Boolean {
     val src = withContext(Dispatchers.IO) {
-        runCatching { MediaSaver.decodeUpright(context, item.uri, EditRenderer.MAX_OUTPUT_PX) }.getOrNull()
+        runCatching { MediaSaver.decodeForEditing(context, item.uri) }.getOrNull()
     } ?: return false
     val logo = preset.logo?.let { LayerLoader.load(context, it, 2048) }
     if (preset.logo != null && logo == null) return false

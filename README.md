@@ -99,7 +99,7 @@ to change its crop, filters, text and stickers later (Save updates that copy).
 any photo with one tap.
 **Save copy** puts the edited copy next to the original (same album, same date) and keeps the
 date/camera/location info. **⋮ → Overwrite original** replaces the original (JPEG, PNG and WebP).
-Edits are saved at up to 4096 px on the longest side.
+Edits are saved at full size up to the GPU's biggest texture side (usually 16384 px, so long panoramas keep every pixel) and about 17 megapixels in all. Zooming into a photo in the viewer loads a sharper copy (up to the full picture), and panoramas can zoom until they fill the screen.
 
 ## Personal folder
 A passcode-protected folder (Albums tab → **Personal**). Select photos/videos and choose

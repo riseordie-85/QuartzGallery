@@ -236,23 +236,29 @@ object MediaSaver {
         }
     }
 
-    /** Decodes an image upright (EXIF rotation applied), capped at [maxPx] on the longest side. */
-    fun decodeUpright(context: Context, uri: Uri, maxPx: Int = 4096): Bitmap {
+    /**
+     * Decodes an image upright (EXIF rotation applied), capped at [maxPx] on the longest side and
+     * [maxPixels] in all (a long panorama keeps its full height).
+     */
+    fun decodeUpright(context: Context, uri: Uri, maxPx: Int = 4096, maxPixels: Long = Long.MAX_VALUE): Bitmap {
         val source = ImageDecoder.createSource(context.contentResolver, uri)
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             val w = info.size.width
             val h = info.size.height
-            val longest = max(w, h)
-            if (longest > maxPx) {
-                val s = maxPx.toFloat() / longest
+            val s = ImageLimits.fitScale(w, h, maxPx, maxPixels)
+            if (s < 1f) {
                 decoder.setTargetSize(
-                    (w * s).roundToInt().coerceAtLeast(1),
-                    (h * s).roundToInt().coerceAtLeast(1),
+                    (w * s).toInt().coerceAtLeast(1),
+                    (h * s).toInt().coerceAtLeast(1),
                 )
             }
         }
     }
+
+    /** A photo for editing: as big as can be edited and saved here (see [ImageLimits]). */
+    fun decodeForEditing(context: Context, uri: Uri): Bitmap =
+        decodeUpright(context, uri, ImageLimits.maxSide, ImageLimits.MAX_PIXELS)
 
     /** Grabs the exact frame at [positionMs] from a video and saves it as a photo. */
     suspend fun saveVideoFrame(

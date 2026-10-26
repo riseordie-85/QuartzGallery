@@ -60,8 +60,8 @@ data class FSize(val width: Float, val height: Float) {
  */
 object EditRenderer {
 
-    /** Longest side of a saved edit. Keeps memory and GPU texture sizes safe on every phone. */
-    const val MAX_OUTPUT_PX = 4096
+    /** Longest side of a saved edit: the GPU's biggest texture (so a panorama keeps its pixels). */
+    val MAX_OUTPUT_PX: Int get() = com.tim.gallery.data.ImageLimits.maxSide
 
     // ------------------------------------------------------------ geometry
 
@@ -529,9 +529,13 @@ object EditRenderer {
         val fullW = src.width.toFloat()
         val fullH = src.height.toFloat()
         val out = outputSize(state.geometry, fullW, fullH)
-        val k = min(1f, MAX_OUTPUT_PX / max(out.width, out.height))
-        val w = (out.width * k).roundToInt().coerceAtLeast(1)
-        val h = (out.height * k).roundToInt().coerceAtLeast(1)
+        // (Within the GPU's texture side and the pixel limit: memory stays safe)
+        val k = min(
+            min(1f, MAX_OUTPUT_PX / max(out.width, out.height)),
+            kotlin.math.sqrt(com.tim.gallery.data.ImageLimits.MAX_PIXELS / (out.width.toDouble() * out.height)).toFloat(),
+        )
+        val w = (out.width * k).toInt().coerceAtLeast(1)
+        val h = (out.height * k).toInt().coerceAtLeast(1)
         return renderOffscreen(w, h) { canvas ->
             canvas.scale(w / out.width, h / out.height)
             drawOutput(canvas, state, src, fullW, fullH, ColorShader(), assets)
