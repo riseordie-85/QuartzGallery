@@ -94,7 +94,7 @@ private sealed class Picking(val title: String, val alpha: Boolean) {
 }
 
 /**
- * Quartz look: the background (Quartz Launcher's gradients, 5-point gradients and crystal patterns) and both
+ * Quartz Look: the background (Quartz Launcher's gradients, 5-point gradients and crystal patterns) and both
  * bars (glass, color or gradient, outline, pattern, edge lighting). Everything shows live: this screen's own
  * background and bars, plus a sample Photos / Albums bar at the bottom.
  */
@@ -116,7 +116,7 @@ fun LookScreen(onBack: () -> Unit) {
         topBar = {
             QuartzTopBar(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
-                title = { Text("Quartz look") },
+                title = { Text("Quartz Look") },
                 actions = {
                     TextButton(onClick = { set(QuartzLook()) }) {
                         Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -243,7 +243,7 @@ fun LookScreen(onBack: () -> Unit) {
             }
 
             // ------------------------------------------------ glass and accents
-            item { Heading("Glass & accents") }
+            item { Heading("Glass & Accents") }
             item {
                 Panel {
                     SwitchRow("Frosted glass", look.blur, "Photos scrolling under the bars are blurred. Turn off on slower phones.") { set(look.copy(blur = it)) }

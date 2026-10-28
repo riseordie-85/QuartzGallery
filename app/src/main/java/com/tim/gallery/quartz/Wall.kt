@@ -426,6 +426,7 @@ class WallPainter {
             }
             y += stepY
         }
-        return if (n == 0) 0.3f else kotlin.math.sqrt(sum / n).toFloat()
+        // Average of the screen values (already close to how people see brightness, so no further curve)
+        return if (n == 0) 0.3f else (sum / n).toFloat()
     }
 }

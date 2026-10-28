@@ -59,7 +59,7 @@ Quartz Gallery.
   - **Rotate** (left / right): saved clips are rotated losslessly (MP4); GIFs and frames are rotated too
   - **Save GIF** — small / medium / large, 10–24 fps, up to 20 seconds
   - **Save frames** — every frame, every 2nd or 5th, or one per second, as full-resolution photos
-- **Quartz look** (Settings → Quartz look), with Quartz Launcher's styling:
+- **Quartz Look** (Settings → Quartz Look), with Quartz Launcher's styling:
   - **Backgrounds**: Quartz Launcher's presets (Blue quartz, Citrine, Amethyst, Rose quartz, Smoky
     quartz...), linear, radial and **5-point gradients** (a color per corner plus a glowing middle),
     a plain color, or the plain light/dark theme
@@ -83,7 +83,7 @@ Quartz Gallery.
   - Video player: Space or K play/pause, ← → 5 s, J / L 10 s, , and . step a frame, M mute,
     S capture still, Home / End
   - Editor: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save
-- **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, Quartz look, your
+- **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, Quartz Look, your
   watermarks, imported fonts, and media-management access
 
 ## Photo editor

@@ -141,7 +141,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit, onOpenLook: (
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     leadingContent = { Icon(Icons.Outlined.Palette, contentDescription = null) },
-                    headlineContent = { Text("Quartz look") },
+                    headlineContent = { Text("Quartz Look") },
                     supportingContent = { Text("Quartz backgrounds and 5-point gradients, crystal patterns, glass bars and edge lighting") },
                     modifier = Modifier.clickable(onClick = onOpenLook),
                 )
@@ -273,7 +273,8 @@ private fun SectionTitle(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
+        // Light or dark to suit the background, like the month headings
+        color = com.tim.gallery.quartz.quartzHeadingColor(),
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
     )
 }
