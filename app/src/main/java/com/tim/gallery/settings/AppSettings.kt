@@ -32,7 +32,7 @@ data class SortSettings(val field: SortField = SortField.TAKEN, val descending: 
 }
 
 /** Thumbnail sizes the grid steps through when you pinch (smallest = most columns). */
-val GRID_CELL_SIZES = listOf(64, 80, 104, 140, 200)
+val GRID_CELL_SIZES = listOf(64, 80, 96, 120, 160, 220)
 
 /** Ready-made gradient color pairs. */
 val GRADIENT_PRESETS: List<Pair<String, Pair<Int, Int>>> = listOf(
@@ -56,11 +56,20 @@ object AppSettings {
     private val _gradient = MutableStateFlow(GradientSettings())
     val gradient: StateFlow<GradientSettings> = _gradient.asStateFlow()
 
+    /** Background, bars and glass: the Quartz look. */
+    private val _look = MutableStateFlow(com.tim.gallery.quartz.QuartzLook())
+    val look: StateFlow<com.tim.gallery.quartz.QuartzLook> = _look.asStateFlow()
+
+    fun setLook(l: com.tim.gallery.quartz.QuartzLook) {
+        _look.value = l
+        prefs?.edit()?.putString("look", l.toJson())?.apply()
+    }
+
     private val _sort = MutableStateFlow(SortSettings())
     val sort: StateFlow<SortSettings> = _sort.asStateFlow()
 
     /** Grid thumbnail size in dp (pinch the grid to change it). */
-    private val _gridCell = MutableStateFlow(104)
+    private val _gridCell = MutableStateFlow(96)
     val gridCell: StateFlow<Int> = _gridCell.asStateFlow()
 
     /** Tablets / unfolded foldables in landscape: preview the tapped photo beside the grid. */
@@ -85,11 +94,28 @@ object AppSettings {
             end = p.getInt("g_end", d.end),
             angle = p.getFloat("g_angle", d.angle),
         )
+        _look.value = com.tim.gallery.quartz.QuartzLook.fromJson(p.getString("look", null))
+            ?: com.tim.gallery.quartz.QuartzLook(background = migratedBackground(_gradient.value))
         _sort.value = SortSettings(
             field = runCatching { SortField.valueOf(p.getString("sort_field", null) ?: "TAKEN") }.getOrDefault(SortField.TAKEN),
             descending = p.getBoolean("sort_desc", true),
         )
-        _gridCell.value = p.getInt("grid_cell", 104).let { v -> GRID_CELL_SIZES.minByOrNull { kotlin.math.abs(it - v) } ?: 104 }
+        _gridCell.value = p.getInt("grid_cell", 96).let { v -> GRID_CELL_SIZES.minByOrNull { kotlin.math.abs(it - v) } ?: 96 }
+    }
+
+    /** The old two-color gradient background, as a Quartz background (plain when it was off). */
+    private fun migratedBackground(g: GradientSettings): com.tim.gallery.quartz.WallConfig {
+        if (!g.enabled) return com.tim.gallery.quartz.WallConfig()
+        val mid = androidx.core.graphics.ColorUtils.blendARGB(g.start, g.end, 0.5f)
+        return com.tim.gallery.quartz.WallConfig(
+            kind = com.tim.gallery.quartz.WallKind.GRADIENT,
+            gradient = if (g.type == GradientType.RADIAL) com.tim.gallery.quartz.GradientStyle.RADIAL else com.tim.gallery.quartz.GradientStyle.LINEAR,
+            colors = listOf(g.start, mid, g.end, g.end, mid),
+            linearMiddle = g.type == GradientType.REFLECTED,
+            angle = g.angle,
+            radialY = 0.5f,
+            radialSize = 0.7f,
+        ).let { if (g.type == GradientType.REFLECTED) it.copy(colors = listOf(g.start, g.end, g.start, g.start, g.end)) else it }
     }
 
     fun setSort(s: SortSettings) {

@@ -177,11 +177,9 @@ fun MapScreen(
     val accent = MaterialTheme.colorScheme.primary.toArgb()
     val onAccent = MaterialTheme.colorScheme.onPrimary.toArgb()
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    com.tim.gallery.quartz.QuartzScaffold(
         topBar = {
-            TopAppBar(
-                colors = mainTopBarColors(),
+            com.tim.gallery.quartz.QuartzTopBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },

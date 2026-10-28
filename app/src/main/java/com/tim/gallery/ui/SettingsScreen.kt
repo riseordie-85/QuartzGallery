@@ -1,5 +1,6 @@
 package com.tim.gallery.ui
 
+import androidx.compose.material.icons.outlined.Palette
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -79,7 +80,7 @@ import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 /** Theme, gradient background, watermarks, fonts and media permissions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit, onOpenLook: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val theme by AppSettings.theme.collectAsState()
@@ -88,7 +89,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
     val fontVersion by Fonts.version.collectAsState()
     val canManageMedia = rememberCanManageMedia()
 
-    var picking by remember { mutableStateOf<Boolean?>(null) } // true = start color, false = end color
     var watermarks by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { Fonts.refreshImported(context) }
@@ -106,11 +106,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
         }
     }
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    com.tim.gallery.quartz.QuartzScaffold(
+        scroll = { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset },
         topBar = {
-            TopAppBar(
-                colors = mainTopBarColors(),
+            com.tim.gallery.quartz.QuartzTopBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },
@@ -119,6 +119,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
         },
     ) { padding ->
         LazyColumn(
+            state = listState,
             contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 24.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -139,87 +140,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
             item {
                 ListItem(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    headlineContent = { Text("Gradient background") },
-                    supportingContent = { Text("Photos, Albums, Trash and Settings. Text switches to light or dark to stay readable.") },
-                    trailingContent = {
-                        Switch(checked = gradient.enabled, onCheckedChange = { AppSettings.setGradient(gradient.copy(enabled = it)) })
-                    },
+                    leadingContent = { Icon(Icons.Outlined.Palette, contentDescription = null) },
+                    headlineContent = { Text("Quartz look") },
+                    supportingContent = { Text("Quartz backgrounds and 5-point gradients, crystal patterns, glass bars and edge lighting") },
+                    modifier = Modifier.clickable(onClick = onOpenLook),
                 )
-            }
-            if (gradient.enabled) {
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    ) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(110.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .drawBehind { drawRect(gradientBrush(gradient, size)) }
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                GradientType.entries.forEach { t ->
-                                    FilterChip(
-                                        selected = gradient.type == t,
-                                        onClick = { AppSettings.setGradient(gradient.copy(type = t)) },
-                                        label = { Text(t.label) },
-                                    )
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ColorSwatch("Start", gradient.start) { picking = true }
-                                IconButton(onClick = { AppSettings.setGradient(gradient.copy(start = gradient.end, end = gradient.start)) }) {
-                                    Icon(Icons.Outlined.SwapHoriz, contentDescription = "Swap colors")
-                                }
-                                ColorSwatch("End", gradient.end) { picking = false }
-                            }
-                            if (gradient.type != GradientType.RADIAL) {
-                                Column {
-                                    Text(
-                                        "Direction  ${directionLabel(gradient.angle)}",
-                                        style = MaterialTheme.typography.labelLarge,
-                                    )
-                                    Slider(
-                                        value = gradient.angle,
-                                        onValueChange = { v ->
-                                            // Snap to the common directions
-                                            val snapped = listOf(0f, 45f, 90f, 135f, 180f, 225f, 270f, 315f, 360f)
-                                                .firstOrNull { kotlin.math.abs(it - v) < 4f } ?: v
-                                            AppSettings.setGradient(gradient.copy(angle = snapped))
-                                        },
-                                        valueRange = 0f..360f,
-                                    )
-                                }
-                            }
-                            Text("Presets", style = MaterialTheme.typography.labelLarge)
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                items(GRADIENT_PRESETS) { (name, pair) ->
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .clickable { AppSettings.setGradient(gradient.copy(start = pair.first, end = pair.second)) }
-                                            .padding(4.dp),
-                                    ) {
-                                        Box(
-                                            Modifier
-                                                .size(48.dp)
-                                                .clip(CircleShape)
-                                                .drawBehind {
-                                                    drawRect(gradientBrush(gradient.copy(start = pair.first, end = pair.second), size))
-                                                }
-                                                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape)
-                                        )
-                                        Text(name, style = MaterialTheme.typography.labelSmall)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
             item {
@@ -336,19 +261,6 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit) {
                 )
             }
         }
-    }
-
-    picking?.let { start ->
-        ColorPickerDialog(
-            initial = if (start) gradient.start else gradient.end,
-            allowAlpha = false,
-            title = if (start) "Start color" else "End color",
-            onDismiss = { picking = null },
-            onPick = { c ->
-                AppSettings.setGradient(if (start) gradient.copy(start = c) else gradient.copy(end = c))
-                picking = null
-            },
-        )
     }
 
     if (watermarks) {

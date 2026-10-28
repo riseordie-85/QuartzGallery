@@ -87,13 +87,13 @@ fun TrashScreen(
         }
     }
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    com.tim.gallery.quartz.QuartzScaffold(
         modifier = keys,
+        scroll = { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset },
         topBar = {
             if (selected.isEmpty()) {
-                TopAppBar(
-                    colors = mainTopBarColors(),
+                com.tim.gallery.quartz.QuartzTopBar(
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -116,8 +116,7 @@ fun TrashScreen(
                     },
                 )
             } else {
-                TopAppBar(
-                    colors = mainTopBarColors(),
+                com.tim.gallery.quartz.QuartzTopBar(
                     navigationIcon = {
                         IconButton(onClick = { selected = emptySet() }) {
                             Icon(Icons.Filled.Close, contentDescription = "Clear selection")
@@ -142,6 +141,7 @@ fun TrashScreen(
         },
     ) { padding ->
         MediaGrid(
+            gridState = gridState,
             items = items,
             selected = selected,
             onOpen = { onOpenItem(it.id) },

@@ -284,11 +284,23 @@ fun MediaGrid(
             sections.forEach { section ->
                 if (section.title.isNotEmpty()) {
                     item(key = "h_${section.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
-                        Text(
-                            section.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 6.dp),
-                        )
+                        val look by AppSettings.look.collectAsState()
+                        if (look.bigHeadings) {
+                            Text(
+                                section.title,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                color = com.tim.gallery.quartz.quartzHeadingColor(),
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 18.dp, bottom = 10.dp),
+                            )
+                        } else {
+                            Text(
+                                section.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(start = 12.dp, top = 16.dp, bottom = 6.dp),
+                            )
+                        }
                     }
                 }
                 items(section.items, key = { it.id }, contentType = { "tile" }) { item ->
@@ -431,8 +443,7 @@ fun SelectionTopBar(
     onCopy: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
-    TopAppBar(
-        colors = mainTopBarColors(),
+    com.tim.gallery.quartz.QuartzTopBar(
         navigationIcon = {
             IconButton(onClick = onClear) { Icon(Icons.Filled.Close, contentDescription = "Clear selection") }
         },
@@ -451,7 +462,7 @@ fun SelectionTopBar(
             if (onWatermark != null || onPersonal != null || onCopy != null) {
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    com.tim.gallery.quartz.QuartzDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         if (onCopy != null) {
                             DropdownMenuItem(
                                 text = { Text("Copy to album") },
@@ -669,7 +680,7 @@ fun SortButton() {
         IconButton(onClick = { open = true }) {
             Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "Sort")
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        com.tim.gallery.quartz.QuartzDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             SortField.entries.forEach { f ->
                 DropdownMenuItem(
                     text = { Text(f.label) },

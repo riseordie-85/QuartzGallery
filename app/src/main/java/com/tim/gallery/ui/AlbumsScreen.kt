@@ -101,11 +101,10 @@ fun AlbumsScreen(
         }
     }
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    com.tim.gallery.quartz.QuartzScaffold(
+        scroll = { albumsGrid.firstVisibleItemIndex to albumsGrid.firstVisibleItemScrollOffset },
         topBar = {
-            TopAppBar(
-                colors = mainTopBarColors(),
+            com.tim.gallery.quartz.QuartzTopBar(
                 title = { Text("Albums") },
                 actions = {
                     IconButton(onClick = { creating = true }) {
@@ -119,7 +118,7 @@ fun AlbumsScreen(
                             IconButton(onClick = { menuOpen = true }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "More")
                             }
-                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            com.tim.gallery.quartz.QuartzDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(
                                     text = { Text("Move & delete without asking") },
                                     onClick = {
@@ -337,9 +336,9 @@ fun AlbumScreen(
         }
     }
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    com.tim.gallery.quartz.QuartzScaffold(
         modifier = keys,
+        scroll = { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset },
         topBar = {
             if (selected.isNotEmpty()) {
                 SelectionTopBar(
@@ -359,8 +358,7 @@ fun AlbumScreen(
                     onCopy = { copying = selectedItems() },
                 )
             } else {
-                TopAppBar(
-                    colors = mainTopBarColors(),
+                com.tim.gallery.quartz.QuartzTopBar(
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -379,6 +377,10 @@ fun AlbumScreen(
                         }
                     },
                     actions = {
+                        // All / Photos / Videos, when the album has both
+                        if (albumItems.any { it.isVideo } && albumItems.any { !it.isVideo }) {
+                            com.tim.gallery.quartz.TypeDropdown(type) { type = it }
+                        }
                         if (!isFavorites && !isStickers) IconButton(onClick = onAddItems) {
                             Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = "Add photos and videos")
                         }
@@ -387,7 +389,7 @@ fun AlbumScreen(
                             IconButton(onClick = { menuOpen = true }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "More")
                             }
-                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            com.tim.gallery.quartz.QuartzDropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                 DropdownMenuItem(
                                     text = { Text("Rename album") },
                                     enabled = canRename,
@@ -438,11 +440,6 @@ fun AlbumScreen(
             focusId = if (paneActive) previewId else null,
             gridState = gridState,
             // The filter only shows when the album has both photos and videos
-            header = if (albumItems.any { it.isVideo } && albumItems.any { !it.isVideo }) {
-                { TypeFilterChips(type, { type = it }, Modifier.padding(bottom = 6.dp)) }
-            } else {
-                null
-            },
             empty = {
                 if (isFavorites || isStickers) {
                     Text(
@@ -638,11 +635,9 @@ fun PickerScreen(
     var moving by remember { mutableStateOf(false) }
     val name = AlbumOps.nameFromPath(targetKey)
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    com.tim.gallery.quartz.QuartzScaffold(
         topBar = {
-            TopAppBar(
-                colors = mainTopBarColors(),
+            com.tim.gallery.quartz.QuartzTopBar(
                 navigationIcon = {
                     IconButton(onClick = onDone) { Icon(Icons.Filled.Close, contentDescription = "Cancel") }
                 },

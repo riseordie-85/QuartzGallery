@@ -9,7 +9,8 @@ and Google Fonts, and those are downloaded by Google Play services in its own pr
 Quartz Gallery.
 
 ## Features
-- **Photos tab**: everything grouped by month, with All / Photos / Videos filters
+- **Photos tab**: everything grouped by month under big month headings, with an
+  **All / Photos / Videos** dropdown in the top bar
   - **Search** by file name, album, month, year or type ("video", "favorite", "screenshot", "gif"...)
   - **Sort** by date taken, date added, size or name, either direction (albums too)
   - **Pinch the grid** to make thumbnails bigger or smaller; it remembers your choice
@@ -58,9 +59,32 @@ Quartz Gallery.
   - **Rotate** (left / right): saved clips are rotated losslessly (MP4); GIFs and frames are rotated too
   - **Save GIF** — small / medium / large, 10–24 fps, up to 20 seconds
   - **Save frames** — every frame, every 2nd or 5th, or one per second, as full-resolution photos
-- **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, an optional
-  **gradient background** (linear, radial or reflected; start/end colors; direction; presets) for the
-  main screens, your watermarks, imported fonts, and media-management access
+- **Quartz look** (Settings → Quartz look), with Quartz Launcher's styling:
+  - **Backgrounds**: Quartz Launcher's presets (Blue quartz, Citrine, Amethyst, Rose quartz, Smoky
+    quartz...), linear, radial and **5-point gradients** (a color per corner plus a glowing middle),
+    a plain color, or the plain light/dark theme
+  - **Crystal patterns** (Crystal, Ripple, Diamonds, Pyramids, Shards) and simple ones (dots, grid,
+    stripes, checks, waves), with strength, size, shuffle, sparkles and dimming
+  - **Bars**: the top bar and the Photos / Albums bar each get their own color or gradient,
+    see-through amount, **edge lighting** (hairline, soft, bright), shape (rounded, slanted, pointed,
+    wave), roundness, pattern, and floating or attached to the edge; the Photos / Albums bar can sit
+    left, in the middle, right or full width
+  - **Frosted glass**: photos scrolling under the bars are blurred live (switch off on slower phones),
+    plus an accent color for the chosen tab and month headings
+- **Open with, Edit with and Share to Quartz Gallery** from other apps (Files, chats, browsers):
+  - Open with: a viewer with **Save to gallery** and **Edit**
+  - Edit with: straight into the editor; the edit is saved as a copy in Pictures/Gallery
+  - Share several photos or videos: look through them, then **Save all to an album**
+- **Keyboard** (Bluetooth keyboards, DeX, Chromebooks):
+  - Grids: Ctrl+F or / to search, Ctrl+A select all, Delete to trash the selection, Esc to clear,
+    Home / End, Ctrl+, for Settings; arrows and Tab move between photos, Enter opens
+  - Viewer: ← → (Page Up / Down) between photos, + / − / 0 zoom, arrows pan while zoomed,
+    F favorite, Delete to trash, E edit, I details, S share, M move, F2 rename, Space plays a video
+  - Video player: Space or K play/pause, ← → 5 s, J / L 10 s, , and . step a frame, M mute,
+    S capture still, Home / End
+  - Editor: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save
+- **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, Quartz look, your
+  watermarks, imported fonts, and media-management access
 
 ## Photo editor
 Tabs along the bottom:
@@ -159,7 +183,12 @@ grants Gallery "Media management" access so it stops asking.
 - `edit/ColorPicker.kt` color rows, full picker, eyedropper
 - `edit/Watermarks.kt` watermark presets, editor and batch watermarking
 - `edit/MarkupSheets.kt`, `edit/LayerLoader.kt` emoji/shape pickers, sticker packs, loading layer pictures
-- `settings/AppSettings.kt`, `ui/SettingsScreen.kt`, `ui/Theme.kt` settings, theme and gradient
+- `settings/AppSettings.kt`, `ui/SettingsScreen.kt`, `ui/Theme.kt` settings, theme and background
+- `quartz/` the Quartz look: `Wall.kt` + `Facets.kt` backgrounds and crystal patterns (from Quartz
+  Launcher), `Glass.kt` frosted glass, bar shapes and edge lighting, `Bars.kt` top bar, Photos / Albums
+  bar and menus, `Look.kt` the settings; `ui/LookScreen.kt` its settings screen
+- `Incoming.kt` photos and videos shared or opened from other apps
+- `ui/Keys.kt` keyboard shortcuts
 - `data/Search.kt`, `data/Metadata.kt` search/sort and photo details
 - `video/` trim, GIF and frame export, GIF reader/writer
 - `map/` offline world map, place names and location index (`assets/map/` — Natural Earth, public domain)

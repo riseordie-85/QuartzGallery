@@ -142,7 +142,16 @@ private fun GalleryRoot() {
             }
             composable("settings") {
                 MainBackground {
-                    SettingsScreen(onBack = { nav.popBackStack() }, onOpenPersonal = { nav.navigate("personal") })
+                    SettingsScreen(
+                        onBack = { nav.popBackStack() },
+                        onOpenPersonal = { nav.navigate("personal") },
+                        onOpenLook = { nav.navigate("look") },
+                    )
+                }
+            }
+            composable("look") {
+                MainBackground {
+                    com.tim.gallery.ui.LookScreen(onBack = { nav.popBackStack() })
                 }
             }
             composable(

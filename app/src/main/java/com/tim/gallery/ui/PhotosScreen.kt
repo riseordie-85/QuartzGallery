@@ -70,7 +70,7 @@ import com.tim.gallery.TypeFilter
 import com.tim.gallery.data.GalleryItem
 
 enum class MainTab(val route: String, val label: String, val icon: ImageVector) {
-    PHOTOS("photos", "Photos", Icons.Outlined.Photo),
+    PHOTOS("photos", "Photos", Icons.Outlined.Image),
     ALBUMS("albums", "Albums", Icons.Outlined.PhotoAlbum),
 }
 
@@ -90,16 +90,13 @@ fun MainTabsLayout(current: MainTab, onSelect: (MainTab) -> Unit, content: @Comp
 
 @Composable
 fun MainTabsBar(current: MainTab, onSelect: (MainTab) -> Unit) {
-    NavigationBar(containerColor = mainNavBarColor()) {
-        MainTab.entries.forEach { tab ->
-            NavigationBarItem(
-                selected = tab == current,
-                onClick = { if (tab != current) onSelect(tab) else MainTabEvents.reselected.tryEmit(tab) },
-                icon = { Icon(tab.icon, contentDescription = null) },
-                label = { Text(tab.label) },
-            )
-        }
-    }
+    com.tim.gallery.quartz.QuartzNavBar(
+        MainTab.entries.map { tab ->
+            com.tim.gallery.quartz.NavItem(tab.label, tab.icon, selected = tab == current) {
+                if (tab != current) onSelect(tab) else MainTabEvents.reselected.tryEmit(tab)
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,12 +149,10 @@ fun PhotosScreen(
         }
     }
 
-    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     // Tap "Photos" again: back to the top
     LaunchedEffect(Unit) {
         MainTabEvents.reselected.collect { tab ->
             if (tab == MainTab.PHOTOS) {
-                scrollBehavior.state.heightOffset = 0f
                 // Its own job: touching the grid mid-scroll cancels just this scroll, not the listener
                 launch {
                     if (gridState.firstVisibleItemIndex > 60) gridState.scrollToItem(30)
@@ -190,13 +185,13 @@ fun PhotosScreen(
         }
     }
 
-    Scaffold(
-        containerColor = mainContainerColor(),
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection).then(keys),
+    com.tim.gallery.quartz.QuartzScaffold(
+        modifier = keys,
+        scroll = { gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset },
         topBar = {
             if (selected.isEmpty()) {
                 if (searching) {
-                    TopAppBar(
+                    com.tim.gallery.quartz.QuartzTopBar(
                         navigationIcon = {
                             IconButton(onClick = {
                                 searching = false
@@ -207,8 +202,9 @@ fun PhotosScreen(
                             TextField(
                                 value = searchText,
                                 onValueChange = { searchText = it },
-                                placeholder = { Text("Name, album, month, year, video…") },
+                                placeholder = { Text("Name, album, month, year, video…", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                                 singleLine = true,
+                                textStyle = MaterialTheme.typography.titleMedium,
                                 colors = TextFieldDefaults.colors(
                                     focusedContainerColor = Color.Transparent,
                                     unfocusedContainerColor = Color.Transparent,
@@ -226,11 +222,21 @@ fun PhotosScreen(
                                 }
                             }
                         },
-                        colors = mainTopBarColors(),
                     )
                 } else {
-                    TopAppBar(
-                        title = { Text("Quartz Gallery") },
+                    com.tim.gallery.quartz.QuartzTopBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Quartz Gallery",
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                Spacer(Modifier.weight(1f))
+                                com.tim.gallery.quartz.TypeDropdown(type) { vm.typeFilter.value = it }
+                            }
+                        },
                         actions = {
                             IconButton(onClick = { searching = true }) {
                                 Icon(Icons.Outlined.Search, contentDescription = "Search")
@@ -240,8 +246,6 @@ fun PhotosScreen(
                                 Icon(Icons.Outlined.Settings, contentDescription = "Settings")
                             }
                         },
-                        colors = mainTopBarColors(),
-                        scrollBehavior = scrollBehavior,
                     )
                 }
             } else {
@@ -270,7 +274,7 @@ fun PhotosScreen(
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            return@Scaffold
+            return@QuartzScaffold
         }
         PreviewPaneLayout(
             active = paneActive,
@@ -299,13 +303,10 @@ fun PhotosScreen(
                         modifier = Modifier.fillMaxWidth().padding(48.dp),
                     )
                 },
-                header = {
-                    FiltersHeader(
-                        access = access,
-                        onRequestAccess = onRequestAccess,
-                        type = type,
-                        onType = { vm.typeFilter.value = it },
-                    )
+                header = if (access == Access.PARTIAL) {
+                    { FiltersHeader(access = access, onRequestAccess = onRequestAccess) }
+                } else {
+                    null
                 },
             )
         }
@@ -365,26 +366,20 @@ fun PhotosScreen(
 private fun FiltersHeader(
     access: Access,
     onRequestAccess: () -> Unit,
-    type: TypeFilter,
-    onType: (TypeFilter) -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-        if (access == Access.PARTIAL) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "You've only allowed access to some photos.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f).padding(vertical = 12.dp),
-                    )
-                    TextButton(onClick = onRequestAccess) { Text("Change") }
-                }
-            }
+    if (access != Access.PARTIAL) return
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "You've only allowed access to some photos.",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f).padding(vertical = 12.dp),
+            )
+            TextButton(onClick = onRequestAccess) { Text("Change") }
         }
-        TypeFilterChips(type, onType)
     }
 }
 

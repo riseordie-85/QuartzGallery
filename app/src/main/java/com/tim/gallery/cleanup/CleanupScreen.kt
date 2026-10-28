@@ -124,11 +124,9 @@ fun CleanupScreen(vm: GalleryViewModel, onBack: () -> Unit, onOpenItem: (Long) -
     val selectedItems = all.filter { it.id in selected }
     val selectedBytes = selectedItems.sumOf { it.sizeBytes }
 
-    Scaffold(
-        containerColor = mainContainerColor(),
+    com.tim.gallery.quartz.QuartzScaffold(
         topBar = {
-            TopAppBar(
-                colors = mainTopBarColors(),
+            com.tim.gallery.quartz.QuartzTopBar(
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 },

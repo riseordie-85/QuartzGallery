@@ -19,6 +19,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -96,32 +103,76 @@ fun gradientBrush(g: GradientSettings, size: Size): Brush {
 fun gradientIsDark(g: GradientSettings): Boolean =
     (android.graphics.Color.luminance(g.start) + android.graphics.Color.luminance(g.end)) / 2f < 0.45f
 
+/** A first guess at how bright a background looks, before it's rendered. */
+private fun estimateBrightness(c: com.tim.gallery.quartz.WallConfig): Float {
+    val used = when {
+        c.kind == com.tim.gallery.quartz.WallKind.SOLID -> listOf(c.solid)
+        c.gradient == com.tim.gallery.quartz.GradientStyle.CORNERS -> (0 until 5).map { c.color(it) }
+        c.gradient == com.tim.gallery.quartz.GradientStyle.RADIAL -> listOf(c.color(0), c.color(2))
+        c.linearMiddle -> listOf(c.color(0), c.color(1), c.color(2))
+        else -> listOf(c.color(0), c.color(2))
+    }
+    val avg = used.map { kotlin.math.sqrt(android.graphics.Color.luminance(it)) }.average().toFloat()
+    return avg * (1f - c.dim.coerceIn(0f, 0.8f))
+}
+
 /**
- * Background for the main screens. With the gradient on, it paints the gradient and switches
- * the text colors to light or dark so they stay readable on it.
+ * Background for the main screens: the Quartz background (gradient, 5-point gradient or color, with an optional
+ * crystal pattern) when one is chosen. Text switches to light or dark so it stays readable on it.
  */
 @Composable
 fun MainBackground(content: @Composable () -> Unit) {
-    val g by AppSettings.gradient.collectAsState()
-    if (!g.enabled) {
+    val look by AppSettings.look.collectAsState()
+    val bg = look.background
+    if (!bg.drawn) {
         SystemBarIcons(MaterialTheme.colorScheme.background.luminance() < 0.5f)
-        content()
+        CompositionLocalProvider(com.tim.gallery.quartz.LocalWall provides null, content = content)
         return
     }
-    val dark = gradientIsDark(g)
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val wall by produceState(com.tim.gallery.quartz.WallCache.cached(bg, size.width, size.height), bg, size) {
+        if (size.width <= 0 || size.height <= 0) return@produceState
+        com.tim.gallery.quartz.WallCache.cached(bg, size.width, size.height)?.let {
+            value = it
+            return@produceState
+        }
+        // A quick small one first (while a slider moves), then the sharp one
+        value = withContext(Dispatchers.Default) { com.tim.gallery.quartz.WallCache.build(bg, size.width, size.height, 0.3f) }
+        kotlinx.coroutines.delay(120)
+        value = withContext(Dispatchers.Default) { com.tim.gallery.quartz.WallCache.build(bg, size.width, size.height, 1f) }
+    }
+    val current = wall?.takeIf { it.w == size.width && it.h == size.height }
+    val brightness = current?.takeIf { it.config == bg }?.brightness ?: estimateBrightness(bg)
+    val dark = brightness < 0.6f
     SystemBarIcons(dark)
-    Box(Modifier.fillMaxSize().drawBehind { drawRect(gradientBrush(g, size)) }) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { size = it }
+            .drawBehind {
+                val img = current?.full
+                if (img != null) {
+                    drawImage(img, dstSize = androidx.compose.ui.unit.IntSize(this.size.width.toInt(), this.size.height.toInt()), filterQuality = androidx.compose.ui.graphics.FilterQuality.Low)
+                } else {
+                    drawRect(Color(bg.color(0)))
+                }
+            },
+    ) {
         MaterialTheme(colorScheme = galleryColorScheme(LocalContext.current, dark)) {
-            // Text without its own color (month headings, names...) follows the gradient too;
+            // Text without its own color (month headings, names...) follows the background too;
             // otherwise it falls back to black on the see-through background
             CompositionLocalProvider(
                 LocalGradientActive provides true,
+                com.tim.gallery.quartz.LocalWall provides current?.copyBrightness(brightness),
                 androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onBackground,
                 content = content,
             )
         }
     }
 }
+
+private fun com.tim.gallery.quartz.WallImage.copyBrightness(b: Float) =
+    if (b == brightness) this else com.tim.gallery.quartz.WallImage(config, w, h, full, blurred, b)
 
 /** Scaffold background for main screens: see-through when the gradient is on. */
 @Composable
