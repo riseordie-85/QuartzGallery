@@ -48,6 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.drawWithContent
 import com.tim.gallery.settings.AppSettings
 import com.tim.gallery.ui.LocalGradientActive
 import com.tim.gallery.ui.mainContainerColor
@@ -318,4 +320,27 @@ fun QuartzNavBar(items: List<NavItem>, modifier: Modifier = Modifier) {
             row(Modifier.fillMaxWidth())
         }
     }
+}
+
+/** One line of text that shrinks (down to [minSize]) rather than cut off, e.g. the app name in a narrow bar. */
+@Composable
+fun FitText(text: String, modifier: Modifier = Modifier, minSize: androidx.compose.ui.unit.TextUnit = 14.sp) {
+    val base = androidx.compose.material3.LocalTextStyle.current
+    var style by remember(text, base) { mutableStateOf(base) }
+    var ready by remember(text, base) { mutableStateOf(false) }
+    Text(
+        text,
+        style = style,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.drawWithContent { if (ready) drawContent() },
+        onTextLayout = { r ->
+            if (r.hasVisualOverflow && style.fontSize.value * 0.92f >= minSize.value) {
+                style = style.copy(fontSize = style.fontSize * 0.92f)
+            } else {
+                ready = true
+            }
+        },
+    )
 }

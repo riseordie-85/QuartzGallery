@@ -227,13 +227,7 @@ fun PhotosScreen(
                     com.tim.gallery.quartz.QuartzTopBar(
                         title = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "Quartz Gallery",
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false),
-                                )
-                                Spacer(Modifier.weight(1f))
+                                com.tim.gallery.quartz.FitText("Quartz Gallery", Modifier.weight(1f))
                                 com.tim.gallery.quartz.TypeDropdown(type) { vm.typeFilter.value = it }
                             }
                         },

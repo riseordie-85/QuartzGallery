@@ -192,6 +192,8 @@ fun MediaGrid(
 ) {
     val sort by AppSettings.sort.collectAsState()
     val cellDp by AppSettings.gridCell.collectAsState()
+    val look by AppSettings.look.collectAsState()
+    val headingColor = com.tim.gallery.quartz.quartzHeadingColor()
     val grouped = groupByMonth && sort.byDate
     val byAdded = sort.field == SortField.ADDED
     // Grouping thousands of items by month happens in the background
@@ -284,13 +286,12 @@ fun MediaGrid(
             sections.forEach { section ->
                 if (section.title.isNotEmpty()) {
                     item(key = "h_${section.key}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
-                        val look by AppSettings.look.collectAsState()
                         if (look.bigHeadings) {
                             Text(
                                 section.title,
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                color = com.tim.gallery.quartz.quartzHeadingColor(),
+                                color = headingColor,
                                 maxLines = 1,
                                 modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 18.dp, bottom = 10.dp),
                             )
