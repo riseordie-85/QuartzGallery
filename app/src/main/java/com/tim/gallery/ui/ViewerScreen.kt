@@ -131,6 +131,7 @@ fun ViewerScreen(
     val pagerState = rememberPagerState(initialPage = initialPage) { items.size }
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var zoomed by remember { mutableStateOf(false) }
+    var zoomKey by remember { mutableStateOf<ZoomKey?>(null) }
     var infoFor by remember { mutableStateOf<GalleryItem?>(null) }
     var moving by remember { mutableStateOf<List<GalleryItem>?>(null) }
     var stickerFrom by remember { mutableStateOf<GalleryItem?>(null) }
@@ -146,6 +147,7 @@ fun ViewerScreen(
     LaunchedEffect(pagerState.currentPage) {
         zoomed = false
         motionFile = null
+        zoomKey = null
     }
 
     // Stay on the same photo if the list changes order (sorting, renames, items arriving)
@@ -179,7 +181,6 @@ fun ViewerScreen(
 
     // Keyboard: arrows/Page keys go between photos (or pan when zoomed in), +/-/0 zoom, F favorite,
     // Delete to trash, E edit, I details, Enter/Space plays a video, Esc back
-    var zoomKey by remember { mutableStateOf<ZoomKey?>(null) }
     fun goTo(page: Int) {
         if (items.isEmpty()) return
         val p = page.coerceIn(0, items.lastIndex)
@@ -193,14 +194,14 @@ fun ViewerScreen(
         when {
             k.isBack -> { onBack(); true }
             !k.plain -> false
-            zoomed && (dx != 0f || dy != 0f) -> { zoomKey = ZoomKey(ZoomKey.Action.PAN, dx, dy); true }
+            zoomed && (dx != 0f || dy != 0f) -> { zoomKey = ZoomKey(ZoomKey.Action.PAN, dx, dy, item.id); true }
             k.isAny(Key.DirectionLeft, Key.PageUp) -> { goTo(pagerState.currentPage - 1); true }
             k.isAny(Key.DirectionRight, Key.PageDown) -> { goTo(pagerState.currentPage + 1); true }
             k.key == Key.MoveHome -> { goTo(0); true }
             k.key == Key.MoveEnd -> { goTo(items.lastIndex); true }
-            !item.isVideo && k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN); true }
-            !item.isVideo && k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT); true }
-            !item.isVideo && k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET); true }
+            !item.isVideo && k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN, itemId = item.id); true }
+            !item.isVideo && k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT, itemId = item.id); true }
+            !item.isVideo && k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET, itemId = item.id); true }
             item.isVideo && (k.isEnter || k.key == Key.Spacebar) -> { onPlay(item.id); true }
             k.key == Key.Spacebar -> { chromeVisible = !chromeVisible; true }
             k.key == Key.I -> { infoFor = item; true }
@@ -259,7 +260,7 @@ fun ViewerScreen(
                         isCurrent = page == pagerState.currentPage,
                         onTap = { chromeVisible = !chromeVisible },
                         onZoomChange = { if (page == pagerState.currentPage) zoomed = it },
-                        zoomKey = if (page == pagerState.currentPage) zoomKey else null,
+                        zoomKey = zoomKey?.takeIf { page == pagerState.currentPage && it.itemId == item.id },
                         onLongPress = motionOffset?.let { off ->
                             {
                                 scope.launch { motionFile = MotionPhotos.extract(context, item, off)?.let { item.id to it } }

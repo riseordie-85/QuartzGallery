@@ -165,7 +165,7 @@ fun PhotosScreen(
     // Keyboard: Ctrl+F or / search, Ctrl+A select all, Delete trashes the selection, Esc clears or closes search,
     // Ctrl+, settings, Home/End jump to the top or bottom (arrows and Tab move between photos, Enter opens)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val keys = Modifier.keyboardShortcuts { k ->
+    val keys = Modifier.keyboardShortcuts(takeFocus = !searching) { k ->
         val Key = androidx.compose.ui.input.key.Key
         when {
             k.isBack && selected.isNotEmpty() -> { selected = emptySet(); true }

@@ -67,7 +67,7 @@ fun backgroundBrightness(): Float {
 fun quartzHeadingColor(): Color {
     val look by AppSettings.look.collectAsState()
     val accent = Color(look.accent)
-    return if (backgroundBrightness() > 0.6f) {
+    return if (!Ink.prefersLight(backgroundBrightness())) {
         if (accent.luminance() < 0.25f) accent else Ink.Dark
     } else {
         lerp(accent, Color.White, 0.85f)

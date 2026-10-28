@@ -229,6 +229,6 @@ fun ZoomableImage(
 }
 
 /** One keyboard zoom or pan step for [ZoomableImage]; a new instance per key press. */
-class ZoomKey(val action: Action, val dx: Float = 0f, val dy: Float = 0f) {
+class ZoomKey(val action: Action, val dx: Float = 0f, val dy: Float = 0f, val itemId: Long = 0L) {
     enum class Action { IN, OUT, RESET, PAN }
 }

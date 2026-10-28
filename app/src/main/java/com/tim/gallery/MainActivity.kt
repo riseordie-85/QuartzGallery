@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // Opened from another app: "Open with", "Edit with", or shared to the gallery
-        val incoming = Incoming.from(intent, contentResolver)
+        val incoming = Incoming.from(intent, this)
 
         setContent {
             GalleryTheme {

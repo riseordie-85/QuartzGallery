@@ -17,15 +17,17 @@ import kotlin.math.sqrt
  * facing the light get a white veil, facets facing away a dark one, so the pattern takes on whatever color or
  * gradient is underneath (gold stays gold, amethyst stays purple).
  *
+ * One instance per thread that draws (its buffers are reused between draws).
+ *
  * Everything is placed on a grid with fixed "random" numbers per grid point, so the cover screen's half lines up with
  * the unfolded screen, and the same wallpaper always looks the same.
  */
-internal object Facets {
+internal class Facets {
 
     // Light from the upper left, a little in front of the screen
-    private const val LX = -0.33f
-    private const val LY = -0.68f
-    private const val LZ = 0.65f
+    private val LX = -0.33f
+    private val LY = -0.68f
+    private val LZ = 0.65f
 
     private var verts = FloatArray(0)
     private var colors = IntArray(0)

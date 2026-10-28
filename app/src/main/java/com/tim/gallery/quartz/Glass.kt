@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.PI
 import kotlin.math.hypot
@@ -89,10 +91,16 @@ internal object WallCache {
     @Synchronized
     fun cached(config: WallConfig, w: Int, h: Int): WallImage? = last?.takeIf { it.config == config && it.w == w && it.h == h }
 
-    /** Renders [config]; [scale] < 1 for a quick first look while a slider moves. */
-    fun build(config: WallConfig, w: Int, h: Int, scale: Float): WallImage {
-        val full = WallRenderer.render(w, h, scale, config)
+    /** One background at a time, so slider steps queue up instead of piling up big bitmaps. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val dispatcher = kotlinx.coroutines.Dispatchers.Default.limitedParallelism(1)
+
+    /** Renders [config]; [scale] < 1 for a quick first look while a slider moves. Gives up early once cancelled. */
+    suspend fun build(config: WallConfig, w: Int, h: Int, scale: Float): WallImage {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         val small = WallRenderer.render(w, h, 0.125f, config)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val full = WallRenderer.render(w, h, scale, config)
         val brightness = WallRenderer.brightness(small)
         WallRenderer.blur(small, max(2, (min(w, h) * 0.125f / 40f).roundToInt()))
         val image = WallImage(config, w, h, full.asImage(), small.asImage(), brightness)
@@ -272,16 +280,28 @@ class BarShape(
 
 // ------------------------------------------------------------------ bar surfaces
 
-/** Dark text on light glass, white on dark. */
+/** Dark text on light glass, white on dark: whichever reads with more contrast. */
 object Ink {
     val Dark = Color(0xFF15141C)
     val Light = Color.White
+    private val darkLum = Dark.luminance()
 
-    /** How light [tint] looks over something [behind] bright (both 0 dark – 1 light, as people see it). */
-    fun brightness(tint: Color, behind: Float): Float =
-        tint.alpha * kotlin.math.sqrt(tint.copy(alpha = 1f).luminance()) + (1 - tint.alpha) * behind
+    /**
+     * How light [tint] looks over something [behind] bright. Both use the "as people see it" scale
+     * (square root of luminance); the mixing itself is done in linear light, as the screen does it.
+     */
+    fun brightness(tint: Color, behind: Float): Float {
+        val l = tint.alpha * tint.copy(alpha = 1f).luminance() + (1 - tint.alpha) * behind * behind
+        return kotlin.math.sqrt(l.coerceIn(0f, 1f))
+    }
 
-    fun on(brightness: Float): Color = if (brightness > 0.6f) Dark else Light
+    /** True when white text reads better than dark on something this bright. */
+    fun prefersLight(brightness: Float): Boolean {
+        val l = brightness * brightness
+        return (1.05f / (l + 0.05f)) >= ((l + 0.05f) / (darkLum + 0.05f))
+    }
+
+    fun on(brightness: Float): Color = if (prefersLight(brightness)) Light else Dark
 }
 
 /** How bright a bar in [style] looks over a background [behind] bright. */
@@ -305,6 +325,8 @@ fun Modifier.barSurface(style: BarStyle, shape: Shape, look: QuartzLook, base: C
     var origin by remember { mutableStateOf(Offset.Zero) }
     return this
         .onGloballyPositioned { origin = it.positionInWindow() }
+        // The bar takes touches on its own background, so they don't reach the photos scrolling under it
+        .pointerInput(Unit) {}
         .drawBehind {
             val outline = shape.createOutline(size, layoutDirection, this)
             val path = Path().apply { addOutline(outline) }
@@ -359,7 +381,7 @@ fun Modifier.barSurface(style: BarStyle, shape: Shape, look: QuartzLook, base: C
                             (origin.x + size.width).toInt() + 1, (origin.y + size.height).toInt() + 1,
                         )
                         native.clipRect(clip)
-                        WallRenderer.drawPatternOnly(native, screenW, screenH, clip, style.pattern, style.patternStrength, style.patternSize)
+                        BarPainter.drawPatternOnly(native, screenW, screenH, clip, style.pattern, style.patternStrength, style.patternSize)
                         native.restore()
                     }
                 }

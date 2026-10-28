@@ -26,20 +26,45 @@ import androidx.compose.ui.input.key.type
  * [onKey] returns true when it used the key.
  */
 @Composable
-fun Modifier.keyboardShortcuts(enabled: Boolean = true, onKey: (Shortcut) -> Boolean): Modifier {
+fun Modifier.keyboardShortcuts(
+    enabled: Boolean = true,
+    /** Takes keyboard focus whenever this turns true (e.g. when a search field closes). */
+    takeFocus: Boolean = true,
+    onKey: (Shortcut) -> Boolean,
+): Modifier {
     val focus = remember { FocusRequester() }
     val handler by rememberUpdatedState(onKey)
     val on by rememberUpdatedState(enabled)
-    LaunchedEffect(enabled) { if (enabled) runCatching { focus.requestFocus() } }
+    LaunchedEffect(enabled, takeFocus) { if (enabled && takeFocus) runCatching { focus.requestFocus() } }
     return this
         .focusRequester(focus)
-        .onPreviewKeyEvent { e -> on && e.type == KeyEventType.KeyDown && handler(Shortcut(e)) }
+        .onPreviewKeyEvent { e ->
+            if (!on || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            val k = Shortcut(e)
+            // Holding a key down repeats only moving, zooming and seeking, never Delete and the like
+            if (k.repeat && !k.repeats) return@onPreviewKeyEvent k.oneShot
+            handler(k)
+        }
         .focusable()
 }
 
 /** A key press, with the modifier keys spelled out. */
 class Shortcut(event: KeyEvent) {
     val key: Key = event.key
+    /** The key is being held down (an automatic repeat). */
+    val repeat: Boolean = event.nativeKeyEvent.repeatCount > 0
+
+    /** Keys whose action can repeat while held. */
+    val repeats: Boolean
+        get() = key == Key.DirectionLeft || key == Key.DirectionRight || key == Key.DirectionUp || key == Key.DirectionDown ||
+            key == Key.PageUp || key == Key.PageDown || isZoomIn || isZoomOut ||
+            key == Key.J || key == Key.L || key == Key.Comma || key == Key.Period ||
+            key == Key.MediaRewind || key == Key.MediaFastForward
+
+    /** Keys that act once per press: while held they're swallowed (so they don't reach a button), without acting again. */
+    val oneShot: Boolean
+        get() = key == Key.Delete || key == Key.Escape || key == Key.Spacebar || isEnter || ctrl ||
+            key == Key.F || key == Key.E || key == Key.I || key == Key.S || key == Key.M || key == Key.R || key == Key.K || key == Key.F2
     val ctrl: Boolean = event.isCtrlPressed || event.isMetaPressed
     val shift: Boolean = event.isShiftPressed
     val alt: Boolean = event.isAltPressed

@@ -129,7 +129,9 @@ fun MainBackground(content: @Composable () -> Unit) {
         CompositionLocalProvider(com.tim.gallery.quartz.LocalWall provides null, content = content)
         return
     }
-    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    // The window's size to start with (it fills the window), so a background already drawn shows on the first frame
+    val root = LocalView.current.rootView
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize(root.width, root.height)) }
     val wall by produceState(com.tim.gallery.quartz.WallCache.cached(bg, size.width, size.height), bg, size) {
         if (size.width <= 0 || size.height <= 0) return@produceState
         com.tim.gallery.quartz.WallCache.cached(bg, size.width, size.height)?.let {
@@ -137,13 +139,14 @@ fun MainBackground(content: @Composable () -> Unit) {
             return@produceState
         }
         // A quick small one first (while a slider moves), then the sharp one
-        value = withContext(Dispatchers.Default) { com.tim.gallery.quartz.WallCache.build(bg, size.width, size.height, 0.3f) }
+        val work = com.tim.gallery.quartz.WallCache.dispatcher
+        value = withContext(work) { com.tim.gallery.quartz.WallCache.build(bg, size.width, size.height, 0.3f) }
         kotlinx.coroutines.delay(120)
-        value = withContext(Dispatchers.Default) { com.tim.gallery.quartz.WallCache.build(bg, size.width, size.height, 1f) }
+        value = withContext(work) { com.tim.gallery.quartz.WallCache.build(bg, size.width, size.height, 1f) }
     }
     val current = wall?.takeIf { it.w == size.width && it.h == size.height }
     val brightness = current?.takeIf { it.config == bg }?.brightness ?: estimateBrightness(bg)
-    val dark = brightness < 0.6f
+    val dark = com.tim.gallery.quartz.Ink.prefersLight(brightness)
     SystemBarIcons(dark)
     Box(
         Modifier

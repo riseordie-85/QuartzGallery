@@ -635,7 +635,9 @@ fun PickerScreen(
     var moving by remember { mutableStateOf(false) }
     val name = AlbumOps.nameFromPath(targetKey)
 
+    val pickerGrid = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     com.tim.gallery.quartz.QuartzScaffold(
+        scroll = { pickerGrid.firstVisibleItemIndex to pickerGrid.firstVisibleItemScrollOffset },
         topBar = {
             com.tim.gallery.quartz.QuartzTopBar(
                 navigationIcon = {
@@ -666,6 +668,7 @@ fun PickerScreen(
         },
     ) { padding ->
         MediaGrid(
+            gridState = pickerGrid,
             items = candidates,
             selected = selected,
             onOpen = {},

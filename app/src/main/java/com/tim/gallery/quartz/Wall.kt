@@ -177,8 +177,15 @@ object WallPresets {
     )
 }
 
+/** Draws backgrounds on worker threads (one at a time). */
+val WallRenderer = WallPainter()
+
+/** Draws the bars' patterns, on the main thread only, so it never waits for a background being drawn. */
+val BarPainter = WallPainter()
+
 /** Draws Quartz backgrounds (and the patterns on the bars, so they line up with the background's). */
-object WallRenderer {
+class WallPainter {
+    private val facets = Facets()
 
     private val smooth = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
 
@@ -197,7 +204,7 @@ object WallRenderer {
         }
         if (c.drawn && c.pattern != PatternStyle.NONE) {
             if (c.pattern.faceted) {
-                Facets.draw(canvas, width, height, Rect(0, 0, w, h), c)
+                facets.draw(canvas, width, height, Rect(0, 0, w, h), c)
             } else {
                 drawPattern(canvas, width, height, c)
             }
@@ -214,10 +221,11 @@ object WallRenderer {
     fun drawPatternOnly(canvas: Canvas, w: Float, h: Float, clip: Rect, style: PatternStyle, strength: Float, scale: Float = 0.5f) {
         val c = WallConfig(pattern = style, patternStrength = strength, patternSize = 0.3f, patternColor = Color.WHITE)
         val f = Math.pow(2.0, ((scale.coerceIn(0f, 1f) - 0.5f) * 3f).toDouble()).toFloat()
-        if (style.faceted) Facets.draw(canvas, w, h, clip, c, cellScale = f) else drawPattern(canvas, w, h, c, cellScale = f, clipRect = clip)
+        if (style.faceted) facets.draw(canvas, w, h, clip, c, cellScale = f) else drawPattern(canvas, w, h, c, cellScale = f, clipRect = clip)
     }
 
     /** The background at [scale] of a [w]×[h] screen. */
+    @Synchronized
     fun render(w: Int, h: Int, scale: Float, c: WallConfig): Bitmap {
         val bw = max(1, (w * scale).toInt())
         val bh = max(1, (h * scale).toInt())

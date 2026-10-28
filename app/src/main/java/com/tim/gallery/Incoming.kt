@@ -80,19 +80,26 @@ sealed class Incoming {
 
     companion object {
         /** What [intent] hands over, or null when it's just a normal launch (or nothing usable). */
-        fun from(intent: Intent?, resolver: ContentResolver): Incoming? {
+        fun from(intent: Intent?, context: android.content.Context): Incoming? =
+            runCatching { parse(intent, context) }.getOrNull()
+
+        private fun parse(intent: Intent?, context: android.content.Context): Incoming? {
             intent ?: return null
+            val resolver = context.contentResolver
             val uris: List<Uri> = when (intent.action) {
                 Intent.ACTION_VIEW, Intent.ACTION_EDIT -> listOfNotNull(intent.data)
                 Intent.ACTION_SEND -> listOfNotNull(
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java) ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri,
+                    androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                        ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri,
                 )
-                Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                Intent.ACTION_SEND_MULTIPLE -> androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
                     ?: intent.clipData?.let { c -> (0 until c.itemCount).mapNotNull { c.getItemAt(it).uri } }
                     ?: emptyList()
                 else -> return null
             }
-            val items = uris.mapNotNull { external(it, if (uris.size == 1) intent.type else null, resolver) }
+            val items = uris
+                .filter { allowed(it, context) }
+                .mapNotNull { external(it, if (uris.size == 1) intent.type else null, resolver) }
             return when {
                 items.isEmpty() -> null
                 items.size == 1 -> One(items[0], edit = intent.action == Intent.ACTION_EDIT && !items[0].isVideo)
@@ -100,14 +107,42 @@ sealed class Incoming {
             }
         }
 
+        /**
+         * Only other apps' files: never this app's own private files (the personal folder's decrypted
+         * videos, its cache) handed back to it to save somewhere public.
+         */
+        private fun allowed(uri: Uri, context: android.content.Context): Boolean = when (uri.scheme) {
+            "content" -> uri.authority?.startsWith(context.packageName) != true
+            "file" -> {
+                val path = runCatching { java.io.File(uri.path ?: "").canonicalPath }.getOrNull()
+                path != null && !path.startsWith("/data/") &&
+                    !path.startsWith(context.dataDir.canonicalPath) && !path.contains("/Android/data/${context.packageName}")
+            }
+            else -> false
+        }
+
         /** A stand-in gallery item for another app's file (negative id = not one of ours). */
         private fun external(uri: Uri, typeHint: String?, resolver: ContentResolver): GalleryItem? {
-            val mime = runCatching { resolver.getType(uri) }.getOrNull()
+            var mime = runCatching { resolver.getType(uri) }.getOrNull()
                 ?: typeHint?.takeIf { !it.endsWith("/*") }
                 ?: guessMime(uri.lastPathSegment)
                 ?: typeHint
                 ?: return null
             if (!mime.startsWith("image/") && !mime.startsWith("video/")) return null
+            // Only "image/*" or "video/*" to go on: read the picture's real type, so saving it works
+            if (mime.endsWith("/*")) {
+                mime = if (mime.startsWith("image/")) {
+                    runCatching {
+                        resolver.openInputStream(uri)?.use { input ->
+                            val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            android.graphics.BitmapFactory.decodeStream(input, null, o)
+                            o.outMimeType
+                        }
+                    }.getOrNull() ?: "image/jpeg"
+                } else {
+                    "video/mp4"
+                }
+            }
             var name: String? = null
             var size = 0L
             runCatching {
