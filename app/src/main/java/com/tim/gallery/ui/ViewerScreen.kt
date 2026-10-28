@@ -177,7 +177,52 @@ fun ViewerScreen(
     }
     HdrWindowMode(hdr)
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // Keyboard: arrows/Page keys go between photos (or pan when zoomed in), +/-/0 zoom, F favorite,
+    // Delete to trash, E edit, I details, Enter/Space plays a video, Esc back
+    var zoomKey by remember { mutableStateOf<ZoomKey?>(null) }
+    fun goTo(page: Int) {
+        if (items.isEmpty()) return
+        val p = page.coerceIn(0, items.lastIndex)
+        if (p != pagerState.currentPage) scope.launch { pagerState.animateScrollToPage(p) }
+    }
+    val keys = Modifier.keyboardShortcuts { k ->
+        val item = current ?: return@keyboardShortcuts false
+        val Key = androidx.compose.ui.input.key.Key
+        val dx = when (k.key) { Key.DirectionLeft -> -1f; Key.DirectionRight -> 1f; else -> 0f }
+        val dy = when (k.key) { Key.DirectionUp -> -1f; Key.DirectionDown -> 1f; else -> 0f }
+        when {
+            k.isBack -> { onBack(); true }
+            !k.plain -> false
+            zoomed && (dx != 0f || dy != 0f) -> { zoomKey = ZoomKey(ZoomKey.Action.PAN, dx, dy); true }
+            k.isAny(Key.DirectionLeft, Key.PageUp) -> { goTo(pagerState.currentPage - 1); true }
+            k.isAny(Key.DirectionRight, Key.PageDown) -> { goTo(pagerState.currentPage + 1); true }
+            k.key == Key.MoveHome -> { goTo(0); true }
+            k.key == Key.MoveEnd -> { goTo(items.lastIndex); true }
+            !item.isVideo && k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN); true }
+            !item.isVideo && k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT); true }
+            !item.isVideo && k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET); true }
+            item.isVideo && (k.isEnter || k.key == Key.Spacebar) -> { onPlay(item.id); true }
+            k.key == Key.Spacebar -> { chromeVisible = !chromeVisible; true }
+            k.key == Key.I -> { infoFor = item; true }
+            k.key == Key.Delete -> {
+                if (inTrash) confirmDeleteForever = item else actions.trash(listOf(item))
+                true
+            }
+            inTrash -> if (k.key == Key.R) { actions.restore(listOf(item)); true } else false
+            k.key == Key.F -> { actions.setFavorite(listOf(item), favorite = !item.isFavorite); true }
+            k.key == Key.E -> {
+                if (item.isVideo) onEdit(item.id)
+                else if (com.tim.gallery.edit.EditRecipes.has(context, item.id)) editChoice = item else onEdit(item.id)
+                true
+            }
+            k.key == Key.S -> { actions.share(listOf(item)); true }
+            k.key == Key.M -> { moving = listOf(item); true }
+            k.key == Key.F2 -> { renaming = item; true }
+            else -> false
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black).then(keys)) {
         HorizontalPager(
             state = pagerState,
             key = { index -> items.getOrNull(index)?.id ?: index },
@@ -214,6 +259,7 @@ fun ViewerScreen(
                         isCurrent = page == pagerState.currentPage,
                         onTap = { chromeVisible = !chromeVisible },
                         onZoomChange = { if (page == pagerState.currentPage) zoomed = it },
+                        zoomKey = if (page == pagerState.currentPage) zoomKey else null,
                         onLongPress = motionOffset?.let { off ->
                             {
                                 scope.launch { motionFile = MotionPhotos.extract(context, item, off)?.let { item.id to it } }

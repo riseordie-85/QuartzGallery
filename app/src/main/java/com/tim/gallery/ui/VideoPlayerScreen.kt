@@ -214,7 +214,31 @@ fun VideoPlayerScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // Keyboard: Space/K play-pause, arrows jump 5s (J/L 10s), , and . step a frame, M mute, S still, Esc back
+    val keys = Modifier.keyboardShortcuts { k ->
+        val used = when {
+            k.isBack -> { onBack(); true }
+            !k.plain -> false
+            k.isAny(androidx.compose.ui.input.key.Key.Spacebar, androidx.compose.ui.input.key.Key.K, androidx.compose.ui.input.key.Key.MediaPlayPause) || k.isEnter -> { togglePlay(); true }
+            k.key == androidx.compose.ui.input.key.Key.MediaPlay -> { player.play(); true }
+            k.key == androidx.compose.ui.input.key.Key.MediaPause -> { player.pause(); true }
+            k.key == androidx.compose.ui.input.key.Key.DirectionLeft -> { seekTo(player.currentPosition - 5_000); true }
+            k.key == androidx.compose.ui.input.key.Key.DirectionRight -> { seekTo(player.currentPosition + 5_000); true }
+            k.isAny(androidx.compose.ui.input.key.Key.J, androidx.compose.ui.input.key.Key.MediaRewind) -> { seekTo(player.currentPosition - 10_000); true }
+            k.isAny(androidx.compose.ui.input.key.Key.L, androidx.compose.ui.input.key.Key.MediaFastForward) -> { seekTo(player.currentPosition + 10_000); true }
+            k.key == androidx.compose.ui.input.key.Key.Comma -> { player.pause(); stepFrame(-1); true }
+            k.key == androidx.compose.ui.input.key.Key.Period -> { player.pause(); stepFrame(1); true }
+            k.isAny(androidx.compose.ui.input.key.Key.MoveHome, androidx.compose.ui.input.key.Key.Zero) -> { seekTo(0); true }
+            k.key == androidx.compose.ui.input.key.Key.MoveEnd -> { if (duration > 0) seekTo(duration - 1); true }
+            k.key == androidx.compose.ui.input.key.Key.M -> { player.volume = if (player.volume > 0f) 0f else 1f; true }
+            k.key == androidx.compose.ui.input.key.Key.S && allowCapture -> { captureStill(); true }
+            else -> false
+        }
+        if (used) controlsVisible = true
+        used
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black).then(keys)) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {

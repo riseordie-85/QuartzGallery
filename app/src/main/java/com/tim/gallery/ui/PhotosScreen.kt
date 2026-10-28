@@ -167,9 +167,32 @@ fun PhotosScreen(
         }
     }
 
+    // Keyboard: Ctrl+F or / search, Ctrl+A select all, Delete trashes the selection, Esc clears or closes search,
+    // Ctrl+, settings, Home/End jump to the top or bottom (arrows and Tab move between photos, Enter opens)
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val keys = Modifier.keyboardShortcuts { k ->
+        val Key = androidx.compose.ui.input.key.Key
+        when {
+            k.isBack && selected.isNotEmpty() -> { selected = emptySet(); true }
+            k.isBack && searching -> { searching = false; searchText = ""; true }
+            k.ctrl && k.key == Key.F -> { searching = true; true }
+            k.ctrl && k.key == Key.A && !searching -> { selected = items.mapTo(HashSet()) { it.id }; true }
+            k.ctrl && k.key == Key.Comma -> { onOpenSettings(); true }
+            searching -> false
+            k.plain && k.key == Key.Slash -> { searching = true; true }
+            k.plain && k.key == Key.Delete && selected.isNotEmpty() -> {
+                actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() }
+                true
+            }
+            k.plain && k.key == Key.MoveHome -> { scope.launch { gridState.scrollToItem(0) }; true }
+            k.plain && k.key == Key.MoveEnd -> { scope.launch { gridState.scrollToItem(maxOf(0, gridState.layoutInfo.totalItemsCount - 1)) }; true }
+            else -> false
+        }
+    }
+
     Scaffold(
         containerColor = mainContainerColor(),
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection).then(keys),
         topBar = {
             if (selected.isEmpty()) {
                 if (searching) {

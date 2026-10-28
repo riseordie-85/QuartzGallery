@@ -1,5 +1,6 @@
 package com.tim.gallery.edit
 
+import com.tim.gallery.ui.keyboardShortcuts
 import android.content.ContentUris
 import android.graphics.Bitmap
 import android.widget.Toast
@@ -507,7 +508,26 @@ fun EditorScreen(
 
     val selected = state.layers.firstOrNull { it.id == selectedLayer }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // Keyboard: Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo, Ctrl+S save, Esc close
+    val keys = run {
+        Modifier.keyboardShortcuts { k ->
+            val Key = androidx.compose.ui.input.key.Key
+            when {
+                k.isBack && eyedropRequest != null -> { eyedropRequest = null; true }
+                k.isBack -> { close(); true }
+                !k.ctrl || saving -> false
+                (k.key == Key.Z && k.shift) || k.key == Key.Y -> { if (history.canRedo) history.redo(); true }
+                k.key == Key.Z -> { if (history.canUndo) history.undo(); true }
+                k.key == Key.S -> {
+                    if (session.source != null && history.changed) { if (editingCopy != null) updateCopy() else saveCopy() }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Color.Black).then(keys)) {
     Column(
         Modifier
             .fillMaxSize()

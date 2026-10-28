@@ -75,8 +75,21 @@ fun TrashScreen(
         }
     }
 
+    // Keyboard: Ctrl+A select all, Delete deletes the selection for good (after asking), R restores it, Esc
+    val keys = Modifier.keyboardShortcuts { k ->
+        val Key = androidx.compose.ui.input.key.Key
+        when {
+            k.isBack -> { if (selected.isNotEmpty()) selected = emptySet() else onBack(); true }
+            k.ctrl && k.key == Key.A -> { selected = items.mapTo(HashSet()) { it.id }; true }
+            k.plain && k.key == Key.Delete && selected.isNotEmpty() -> { confirmDelete = selectedItems(); true }
+            k.plain && k.key == Key.R && selected.isNotEmpty() -> { actions.restore(selectedItems()); selected = emptySet(); true }
+            else -> false
+        }
+    }
+
     Scaffold(
         containerColor = mainContainerColor(),
+        modifier = keys,
         topBar = {
             if (selected.isEmpty()) {
                 TopAppBar(

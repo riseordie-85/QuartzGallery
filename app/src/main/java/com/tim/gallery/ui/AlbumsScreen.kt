@@ -322,8 +322,24 @@ fun AlbumScreen(
     val title = album?.name ?: AlbumOps.nameFromPath(albumKey)
     val canRename = !isFavorites && !isStickers && AlbumOps.parentOf(albumKey) != null
 
+    // Keyboard: Ctrl+A select all, Delete trashes the selection, Esc clears it (or goes back), F2 renames
+    val keys = Modifier.keyboardShortcuts { k ->
+        val Key = androidx.compose.ui.input.key.Key
+        when {
+            k.isBack -> { if (selected.isNotEmpty()) selected = emptySet() else onBack(); true }
+            k.ctrl && k.key == Key.A -> { selected = items.mapTo(HashSet()) { it.id }; true }
+            k.plain && k.key == Key.Delete && selected.isNotEmpty() -> {
+                actions.trash(selectedItems()) { ok -> if (ok) selected = emptySet() }
+                true
+            }
+            k.plain && k.key == Key.F2 && canRename && selected.isEmpty() -> { renaming = true; true }
+            else -> false
+        }
+    }
+
     Scaffold(
         containerColor = mainContainerColor(),
+        modifier = keys,
         topBar = {
             if (selected.isNotEmpty()) {
                 SelectionTopBar(

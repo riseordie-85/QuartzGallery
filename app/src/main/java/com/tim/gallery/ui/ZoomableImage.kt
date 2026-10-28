@@ -50,6 +50,8 @@ fun ZoomableImage(
     onLongPress: (() -> Unit)? = null,
     /** Draws the picture instead of loading [model] (used for animated GIFs). Gets the zoom/pan modifier. */
     content: (@Composable (Modifier) -> Unit)? = null,
+    /** Keyboard zoom and pan (+, -, 0, arrows while zoomed): a fresh [ZoomKey] each press. */
+    zoomKey: ZoomKey? = null,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -94,6 +96,29 @@ fun ZoomableImage(
             offset = Offset.Zero
         }
         if (!isCurrent) hiRes = false
+    }
+
+    // Keyboard: zoom about the middle, or pan while zoomed in
+    LaunchedEffect(zoomKey) {
+        val k = zoomKey ?: return@LaunchedEffect
+        if (!isCurrent) return@LaunchedEffect
+        when (k.action) {
+            ZoomKey.Action.IN, ZoomKey.Action.OUT -> {
+                val target = (if (k.action == ZoomKey.Action.IN) scale * 1.5f else scale / 1.5f).coerceIn(1f, maxZoom())
+                offset = if (target <= 1.001f) Offset.Zero else clamp(offset * (target / scale), target)
+                scale = if (target <= 1.001f) 1f else target
+                if (scale > HI_RES_ZOOM) hiRes = true
+            }
+            ZoomKey.Action.RESET -> {
+                scale = 1f
+                offset = Offset.Zero
+            }
+            ZoomKey.Action.PAN -> {
+                // Arrow keys move the view, so the picture moves the other way
+                offset = clamp(offset - Offset(k.dx * boxSize.width * 0.15f, k.dy * boxSize.height * 0.15f), scale)
+            }
+        }
+        zoomChanged(scale > 1.01f)
     }
 
     Box(
@@ -201,4 +226,9 @@ fun ZoomableImage(
             }
         }
     }
+}
+
+/** One keyboard zoom or pan step for [ZoomableImage]; a new instance per key press. */
+class ZoomKey(val action: Action, val dx: Float = 0f, val dy: Float = 0f) {
+    enum class Action { IN, OUT, RESET, PAN }
 }
