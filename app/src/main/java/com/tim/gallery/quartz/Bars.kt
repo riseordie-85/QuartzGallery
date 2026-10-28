@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.draw.drawWithContent
 import com.tim.gallery.settings.AppSettings
@@ -204,8 +205,8 @@ fun QuartzMenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
+            .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp)
-            .widthIn(min = 150.dp)
             .clip(RoundedCornerShape(50))
             .then(if (selected) Modifier.border(BorderStroke(2.5.dp, ink), RoundedCornerShape(50)) else Modifier)
             .clickable(onClick = onClick)
@@ -219,6 +220,11 @@ fun QuartzMenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun TypeDropdown(type: com.tim.gallery.TypeFilter, onType: (com.tim.gallery.TypeFilter) -> Unit) {
     var open by remember { mutableStateOf(false) }
+    // The menu is centered under the word ("All", "Photos"...), not the word plus its arrow
+    var textWidth by remember { mutableStateOf(0) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val menuWidth = 170.dp
+    val textCenter = 10.dp + with(density) { textWidth.toDp() } / 2
     Box {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -232,10 +238,16 @@ fun TypeDropdown(type: com.tim.gallery.TypeFilter, onType: (com.tim.gallery.Type
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
+                modifier = Modifier.onSizeChanged { textWidth = it.width },
             )
             Icon(Icons.Filled.ArrowDropDown, contentDescription = "Show all, photos or videos", modifier = Modifier.size(30.dp))
         }
-        QuartzDropdownMenu(expanded = open, onDismissRequest = { open = false }, offset = DpOffset((-24).dp, 8.dp)) {
+        QuartzDropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.width(menuWidth),
+            offset = DpOffset(textCenter - menuWidth / 2, 8.dp),
+        ) {
             com.tim.gallery.TypeFilter.entries.forEach { t ->
                 QuartzMenuChoice(t.label, selected = t == type) {
                     open = false
