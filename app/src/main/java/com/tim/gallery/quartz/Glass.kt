@@ -139,12 +139,21 @@ class GlassSource {
 
 val LocalGlassSource = staticCompositionLocalOf<GlassSource?> { null }
 
+/** Inside a screen's content: how to read its scroll position (for a bar floating inside the content, like the preview pane's). */
+val LocalGlassScroll = staticCompositionLocalOf<() -> Any?> { { null } }
+
 /**
  * Records this screen's content for the glass, and fades it out under the status bar so photos don't
  * clash with the clock and icons. Bars inside the content can't blur it (they'd draw themselves).
  */
 @Composable
-fun GlassContent(source: GlassSource, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
+fun GlassContent(
+    source: GlassSource,
+    modifier: Modifier = Modifier,
+    /** Fade the content out under the status bar (off for content inside content that already does). */
+    fadeTop: Boolean = true,
+    content: @Composable BoxScope.() -> Unit,
+) {
     val layer = rememberGraphicsLayer()
     source.layer = layer
     val statusBar = WindowInsets.statusBars.getTop(LocalDensity.current).toFloat()
@@ -164,7 +173,7 @@ fun GlassContent(source: GlassSource, modifier: Modifier = Modifier, content: @C
                 source.size = it.size
             }
             .drawWithContent {
-                val top = statusBar - source.position.y
+                val top = if (fadeTop) statusBar - source.position.y else 0f
                 layer.compositingStrategy = if (top > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
                 layer.record {
                     this@drawWithContent.drawContent()
@@ -179,7 +188,7 @@ fun GlassContent(source: GlassSource, modifier: Modifier = Modifier, content: @C
                 drawLayer(layer)
             },
     ) {
-        CompositionLocalProvider(LocalGlassSource provides null) { content() }
+        CompositionLocalProvider(LocalGlassSource provides null, LocalGlassScroll provides source.scroll) { content() }
     }
 }
 

@@ -1,6 +1,7 @@
 package com.tim.gallery.ui
 
 import android.net.Uri
+import androidx.compose.ui.layout.onSizeChanged
 import android.text.format.Formatter
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
@@ -111,13 +112,28 @@ fun PreviewPaneLayout(
     }
     val top = contentPadding.calculateTopPadding()
     val bottom = contentPadding.calculateBottomPadding()
+    // The Photos / Albums bar floats over the left half's grid, like it does over the full grid,
+    // with the photos scrolling under it frosted
+    val scroll = com.tim.gallery.quartz.LocalGlassScroll.current
+    val source = androidx.compose.runtime.remember { com.tim.gallery.quartz.GlassSource() }
+    source.scroll = scroll
+    var barHeight by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val barDp = with(androidx.compose.ui.platform.LocalDensity.current) { barHeight.toDp() }
     Row(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(0.5f).fillMaxHeight()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                // With the bar right below it, the grid needs no room at the bottom
-                grid(Modifier.fillMaxSize(), PaddingValues(top = top, bottom = if (bottomBar != null) 0.dp else bottom))
+        Box(Modifier.weight(0.5f).fillMaxHeight()) {
+            com.tim.gallery.quartz.GlassContent(source, Modifier.fillMaxSize(), fadeTop = false) {
+                grid(Modifier.fillMaxSize(), PaddingValues(top = top, bottom = if (bottomBar != null) barDp else bottom))
             }
-            bottomBar?.invoke()
+            if (bottomBar != null) {
+                androidx.compose.runtime.CompositionLocalProvider(com.tim.gallery.quartz.LocalGlassSource provides source) {
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .onSizeChanged { barHeight = it.height },
+                    ) { bottomBar() }
+                }
+            }
         }
         VerticalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
