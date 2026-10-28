@@ -40,10 +40,11 @@ object VaultAuth {
      * just closes it (wrong fingers or faces don't count toward the passcode limit; Android
      * locks out repeated failures itself).
      */
-    fun prompt(context: Context, onSuccess: () -> Unit, onError: (String) -> Unit = {}) {
+    fun prompt(context: Context, onSuccess: () -> Unit, onError: (String) -> Unit = {}): CancellationSignal? {
         val bio = Vault.allowBiometric && biometricAvailable(context)
         val cred = Vault.allowDeviceCredential && screenLockAvailable(context)
-        if (!bio && !cred) return
+        if (!bio && !cred) return null
+        val signal = CancellationSignal()
         val authenticators = (if (bio) Authenticators.BIOMETRIC_WEAK else 0) or
             (if (cred) Authenticators.DEVICE_CREDENTIAL else 0)
         val executor = context.mainExecutor
@@ -56,7 +57,7 @@ object VaultAuth {
         }
         try {
             builder.build().authenticate(
-                CancellationSignal(),
+                signal,
                 executor,
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
@@ -75,5 +76,6 @@ object VaultAuth {
         } catch (e: Exception) {
             onError("Couldn't start unlock")
         }
+        return signal
     }
 }

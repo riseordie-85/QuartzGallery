@@ -98,6 +98,34 @@ object MediaSaver {
             }
     }
 
+    /**
+     * Copies a photo or video another app handed us (shared, or "Open with") into the gallery as
+     * a new item in [relativePath] (Pictures/Gallery if that album won't take it).
+     */
+    suspend fun saveFromUri(
+        context: Context,
+        source: Uri,
+        displayName: String,
+        mime: String,
+        relativePath: String = FOLDER_LABEL,
+    ): Uri? = withContext(Dispatchers.IO) {
+        val video = mime.startsWith("video/")
+        val collection = if (video) {
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        }
+        val write: (java.io.OutputStream) -> Unit = { out ->
+            context.contentResolver.openInputStream(source)?.use { it.copyTo(out) } ?: throw IOException("Can't read the shared file")
+        }
+        insert(context, write, displayName, mime, relativePath, System.currentTimeMillis(), collection)
+            ?: if (relativePath.trimEnd('/') != FOLDER_LABEL) {
+                insert(context, write, displayName, mime, FOLDER_LABEL, System.currentTimeMillis(), collection)
+            } else {
+                null
+            }
+    }
+
     /** Replaces an existing image with a finished file. The caller must hold write access. */
     suspend fun overwriteWithFile(context: Context, uri: Uri, file: File): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -117,6 +145,7 @@ object MediaSaver {
         mime: String,
         relativePath: String,
         dateTaken: Long,
+        collection: Uri = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
     ): Uri? {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
@@ -126,7 +155,6 @@ object MediaSaver {
             put(MediaStore.Images.Media.DATE_TAKEN, dateTaken)
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
-        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = try {
             resolver.insert(collection, values)
         } catch (e: Exception) {

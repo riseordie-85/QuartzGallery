@@ -96,6 +96,8 @@ fun VideoPlayerScreen(
     onBack: () -> Unit,
     /** Off for personal-folder videos, so stills don't end up in the public gallery. */
     allowCapture: Boolean = true,
+    /** Extra buttons at the right of the top bar (e.g. "Save to gallery" for a video from another app). */
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -269,6 +271,7 @@ fun VideoPlayerScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
+                    actions()
                 }
 
                 // Center: -10s, play/pause, +10s, and big frame-step buttons under them

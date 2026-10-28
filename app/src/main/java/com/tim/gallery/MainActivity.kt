@@ -59,14 +59,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Opened from another app (Files, Downloads, a chat app...) to view one photo/video
-        val externalUri: Uri? = if (intent?.action == Intent.ACTION_VIEW) intent.data else null
-        val externalMime: String? = intent?.type ?: externalUri?.let { contentResolver.getType(it) }
+        // Opened from another app: "Open with", "Edit with", or shared to the gallery
+        val incoming = Incoming.from(intent, contentResolver)
 
         setContent {
             GalleryTheme {
-                if (externalUri != null) {
-                    ExternalViewer(externalUri, externalMime, onClose = { finish() })
+                if (incoming != null) {
+                    IncomingRoot(incoming, onClose = { finish() })
                 } else {
                     GalleryRoot()
                 }
@@ -321,31 +320,6 @@ private fun GalleryRoot() {
                     .navigationBarsPadding()
                     .padding(bottom = 80.dp),
             )
-        }
-    }
-}
-
-@Composable
-private fun ExternalViewer(uri: Uri, mime: String?, onClose: () -> Unit) {
-    if (mime?.startsWith("video") == true) {
-        VideoPlayerScreen(uri = uri, title = uri.lastPathSegment ?: "Video", onBack = onClose)
-    } else {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            val animated = com.tim.gallery.ui.rememberAnimatedImage(uri, mime, uri.lastPathSegment)
-            ZoomableImage(
-                model = uri,
-                content = animated?.let { d -> { m -> com.tim.gallery.ui.AnimatedDrawableView(d, playing = true, modifier = m) } },
-                contentDescription = null,
-                isCurrent = true,
-                onTap = {},
-                onZoomChange = {},
-            )
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(4.dp),
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
         }
     }
 }

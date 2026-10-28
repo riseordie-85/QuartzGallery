@@ -24,7 +24,10 @@ data class GalleryItem(
     val expiresMillis: Long = 0L,
     /** When it was added to the phone (download, copy, edit...). */
     val addedMillis: Long = 0L,
-)
+) {
+    /** Handed over by another app (shared, "Open with", "Edit with"), not one of the gallery's own items. */
+    val isExternal: Boolean get() = id < 0
+}
 
 data class Album(
     /** The folder path, e.g. "DCIM/Camera/" — unique per album. */

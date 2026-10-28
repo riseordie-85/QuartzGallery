@@ -337,11 +337,12 @@ fun EditorScreen(
             if (file == null) return@launch // cancelled or already explained
             Toast.makeText(
                 context,
-                if (uri != null) "Saved a copy next to the original" else "Couldn't save the GIF",
+                if (uri != null) (if (item.isExternal) "Saved to Pictures/Gallery" else "Saved a copy next to the original") else "Couldn't save the GIF",
                 Toast.LENGTH_SHORT,
             ).show()
             if (uri != null) {
-                EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
+                // A photo from another app isn't in the gallery, so there's nothing to "edit again" from
+                if (!item.isExternal) EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
                 vm.refresh()
                 onClose()
             }
@@ -379,12 +380,13 @@ fun EditorScreen(
             saving = false
             Toast.makeText(
                 context,
-                if (uri != null) "Saved a copy next to the original" else "Couldn't save the photo",
+                if (uri != null) (if (item.isExternal) "Saved to Pictures/Gallery" else "Saved a copy next to the original") else "Couldn't save the photo",
                 Toast.LENGTH_SHORT,
             ).show()
             if (uri != null) {
                 // Remember how it was made, for "Edit again"
-                EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
+                // A photo from another app isn't in the gallery, so there's nothing to "edit again" from
+                if (!item.isExternal) EditRecipes.save(context, ContentUris.parseId(uri), EditRecipe(item.id, item.uri.toString(), history.state, item.modified, item.sizeBytes))
                 vm.refresh()
                 onClose()
             }
@@ -448,6 +450,7 @@ fun EditorScreen(
     }
 
     val overwriteBlocker: String? = when {
+        item.isExternal -> "This photo belongs to another app, so the edit is saved as a copy in Pictures/Gallery."
         gif != null && state.cutout != CutoutMode.OFF ->
             "Background removal can't be saved into a GIF. Save a copy instead (it'll be a still picture)."
         gif != null -> null

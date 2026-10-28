@@ -92,6 +92,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.withResumed
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tim.gallery.ui.SystemBarIcons
 import com.tim.gallery.ui.VideoPlayerScreen
@@ -372,9 +373,13 @@ private fun LockScreen(onBack: () -> Unit) {
     var forgot by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
     val systemUnlock = remember { VaultAuth.canUseSystemUnlock(context) }
+    // The open fingerprint/face prompt, closed when this screen goes away
+    val promptSignal = remember { arrayOfNulls<android.os.CancellationSignal>(1) }
+    DisposableEffect(Unit) { onDispose { promptSignal[0]?.cancel() } }
 
     fun promptSystem() {
-        VaultAuth.prompt(
+        promptSignal[0]?.cancel()
+        promptSignal[0] = VaultAuth.prompt(
             context,
             onSuccess = {
                 scope.launch {
@@ -386,7 +391,12 @@ private fun LockScreen(onBack: () -> Unit) {
         )
     }
 
-    LaunchedEffect(Unit) { if (systemUnlock) promptSystem() }
+    // Ask only once this screen is really in front. Leaving the folder locks it, and the lock
+    // screen shows for a moment as it fades out; it must not pop a prompt over the gallery then
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(Unit) {
+        if (systemUnlock) lifecycle.withResumed { promptSystem() }
+    }
 
     val failed = Vault.failedAttempts
     Scaffold(
