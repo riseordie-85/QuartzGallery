@@ -126,6 +126,8 @@ fun PhotosScreen(
     val actions = rememberMediaActions(vm)
     val paneActive = rememberPreviewPaneActive()
     var previewId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // The photo chosen with the arrow keys (outside split view)
+    var cursorId by rememberSaveable { mutableStateOf<Long?>(null) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
 
     var selected by remember { mutableStateOf(emptySet<Long>()) }
@@ -167,7 +169,18 @@ fun PhotosScreen(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val keys = Modifier.keyboardShortcuts(takeFocus = !searching) { k ->
         val Key = androidx.compose.ui.input.key.Key
+        // Arrows move the preview (split view) or a highlight; Enter opens it
+        val arrowFrom = if (paneActive) previewId else cursorId
+        val arrowTo = if (k.plain && selected.isEmpty() && !searching) gridArrowStep(items, arrowFrom, k.key, gridState) else null
         when {
+            arrowTo != null -> {
+                if (paneActive) previewId = arrowTo else cursorId = arrowTo
+                true
+            }
+            k.plain && k.isEnter && !searching && selected.isEmpty() && arrowFrom != null && items.any { it.id == arrowFrom } -> {
+                onOpen(arrowFrom)
+                true
+            }
             k.isBack && selected.isNotEmpty() -> { selected = emptySet(); true }
             k.isBack && searching -> { searching = false; searchText = ""; true }
             k.ctrl && k.key == Key.F -> { searching = true; true }
@@ -284,11 +297,11 @@ fun PhotosScreen(
             MediaGrid(
                 items = items,
                 selected = selected,
-                onOpen = { if (paneActive) previewId = it.id else onOpen(it.id) },
+                onOpen = { cursorId = null; if (paneActive) previewId = it.id else onOpen(it.id) },
                 onSelectionChange = { selected = it },
                 contentPadding = gridPadding,
                 modifier = gridModifier,
-                focusId = if (paneActive) previewId else null,
+                focusId = if (paneActive) previewId else cursorId,
                 gridState = gridState,
                 empty = {
                     Text(

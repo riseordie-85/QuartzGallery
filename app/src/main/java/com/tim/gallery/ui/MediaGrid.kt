@@ -867,3 +867,44 @@ private fun FastScroller(
         )
     }
 }
+
+/**
+ * Arrow keys in a grid: the item next to [current] in that direction (left / right through the list,
+ * up / down to the photo above or below on screen). With nothing chosen yet, the first photo on screen.
+ * Null when the key isn't an arrow.
+ */
+fun gridArrowStep(
+    items: List<GalleryItem>,
+    current: Long?,
+    key: androidx.compose.ui.input.key.Key,
+    state: androidx.compose.foundation.lazy.grid.LazyGridState,
+): Long? {
+    val Key = androidx.compose.ui.input.key.Key
+    if (key != Key.DirectionLeft && key != Key.DirectionRight && key != Key.DirectionUp && key != Key.DirectionDown) return null
+    if (items.isEmpty()) return null
+    val ids = items.map { it.id }
+    val visible = state.layoutInfo.visibleItemsInfo.filter { it.key is Long && (it.key as Long) in ids }
+    val index = current?.let { c -> ids.indexOf(c) } ?: -1
+    if (index < 0) return (visible.firstOrNull()?.key as? Long) ?: ids.first()
+    return when (key) {
+        Key.DirectionLeft -> ids[(index - 1).coerceAtLeast(0)]
+        Key.DirectionRight -> ids[(index + 1).coerceAtMost(ids.lastIndex)]
+        else -> {
+            val down = key == Key.DirectionDown
+            val here = visible.firstOrNull { it.key == current }
+            // The photo straight above or below on screen (rows can be short at the end of a month)
+            val target = here?.let { h ->
+                visible
+                    .filter { if (down) it.offset.y > h.offset.y else it.offset.y < h.offset.y }
+                    .groupBy { it.offset.y }
+                    .let { rows -> rows[if (down) rows.keys.minOrNull() else rows.keys.maxOrNull()] }
+                    ?.minByOrNull { kotlin.math.abs(it.offset.x - h.offset.x) }
+            }
+            (target?.key as? Long) ?: run {
+                // Off screen: a row's worth along the list
+                val columns = (state.layoutInfo.visibleItemsInfo.maxOfOrNull { it.column } ?: 0) + 1
+                ids[(index + if (down) columns else -columns).coerceIn(0, ids.lastIndex)]
+            }
+        }
+    }
+}

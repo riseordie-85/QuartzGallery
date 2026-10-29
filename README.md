@@ -77,7 +77,8 @@ Quartz Gallery.
   - Share several photos or videos: look through them, then **Save all to an album**
 - **Keyboard** (Bluetooth keyboards, DeX, Chromebooks):
   - Grids: Ctrl+F or / to search, Ctrl+A select all, Delete to trash the selection, Esc to clear,
-    Home / End, Ctrl+, for Settings; arrows and Tab move between photos, Enter opens
+    Home / End, Ctrl+, for Settings; arrows move between photos (in split view they change the
+    preview), Enter opens full screen
   - Viewer: ← → (Page Up / Down) between photos, + / − / 0 zoom, arrows pan while zoomed,
     F favorite, Delete to trash, E edit, I details, S share, M move, F2 rename, Space plays a video
   - Video player: Space or K play/pause, ← → 5 s, J / L 10 s, , and . step a frame, M mute,

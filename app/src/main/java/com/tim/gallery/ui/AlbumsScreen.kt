@@ -284,6 +284,8 @@ fun AlbumScreen(
     var confirmCleanup by remember { mutableStateOf(false) }
     val paneActive = rememberPreviewPaneActive()
     var previewId by rememberSaveable(albumKey) { mutableStateOf<Long?>(null) }
+    // The photo chosen with the arrow keys (outside split view)
+    var cursorId by rememberSaveable { mutableStateOf<Long?>(null) }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val albums by vm.albums.collectAsStateWithLifecycle()
     val album = albums.firstOrNull { it.key == albumKey }
@@ -324,7 +326,18 @@ fun AlbumScreen(
     // Keyboard: Ctrl+A select all, Delete trashes the selection, Esc clears it (or goes back), F2 renames
     val keys = Modifier.keyboardShortcuts { k ->
         val Key = androidx.compose.ui.input.key.Key
+        // Arrows move the preview (split view) or a highlight; Enter opens it
+        val arrowFrom = if (paneActive) previewId else cursorId
+        val arrowTo = if (k.plain && selected.isEmpty()) gridArrowStep(items, arrowFrom, k.key, gridState) else null
         when {
+            arrowTo != null -> {
+                if (paneActive) previewId = arrowTo else cursorId = arrowTo
+                true
+            }
+            k.plain && k.isEnter && selected.isEmpty() && arrowFrom != null && items.any { it.id == arrowFrom } -> {
+                onOpenItem(arrowFrom, type)
+                true
+            }
             k.isBack -> { if (selected.isNotEmpty()) selected = emptySet() else onBack(); true }
             k.ctrl && k.key == Key.A -> { selected = items.mapTo(HashSet()) { it.id }; true }
             k.plain && k.key == Key.Delete && selected.isNotEmpty() -> {
@@ -433,11 +446,11 @@ fun AlbumScreen(
         MediaGrid(
             items = items,
             selected = selected,
-            onOpen = { if (paneActive) previewId = it.id else onOpenItem(it.id, type) },
+            onOpen = { cursorId = null; if (paneActive) previewId = it.id else onOpenItem(it.id, type) },
             onSelectionChange = { selected = it },
             contentPadding = gridPadding,
             modifier = gridModifier,
-            focusId = if (paneActive) previewId else null,
+            focusId = if (paneActive) previewId else cursorId,
             gridState = gridState,
             // The filter only shows when the album has both photos and videos
             empty = {
