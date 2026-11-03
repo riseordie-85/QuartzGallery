@@ -40,7 +40,17 @@ Quartz Gallery.
   delete them forever, or empty the trash
 - **Favorites**: uses Android's own favorite flag, so other gallery apps see them too
 - **Viewer**: swipe, pinch/double-tap zoom, favorite, share, move, copy, rename, delete,
-  set as wallpaper, add to stickers
+  set as wallpaper, add to stickers. Controls float in small pills (back and details on top,
+  actions at the bottom), so little of the picture is covered
+  - **Filmstrip**: every item along the bottom; tap one or drag the strip to move through them
+  - **Videos play right in the viewer**: they start on their own when you swipe to them, and you
+    swipe on to the next item as with photos. The video's part of the filmstrip opens out into its
+    frames with a playhead: drag it to scrub, keep dragging to move on. Play/pause and time, Capture
+    still and the sound button sit above the strip; double-tap a side to jump 10 s. Everything fades
+    away while the video plays (tap to bring it back)
+  - **Sound**: videos start muted each time the app opens. The speaker button or a volume key turns
+    the sound on, and it stays on for the next videos until you leave the app
+  - The full player (frame stepping, ±10 s) is still in ⋮ → Open in player
   - **Set as wallpaper** opens a full-screen preview: pinch and drag to frame it, rotate,
     zoom out to fit (gaps get a soft blur of the photo), peek at a lock-screen clock, then
     choose home, lock or both
@@ -51,7 +61,7 @@ Quartz Gallery.
   - **GIFs and animated WebP** play in the viewer. Editing a GIF (crop, rotate, colors, filters,
     text, stickers, watermark) applies to every frame and saves a GIF with the original timing
     and transparency. Animated WebP edits save as a still (Android can't write animated WebP)
-- **Video player**: scrub bar using ExoPlayer's scrubbing mode, ±10s, big **−1 / +1 frame** buttons
+- **Full video player** (⋮ → Open in player): scrub bar using ExoPlayer's scrubbing mode, ±10s, big **−1 / +1 frame** buttons
   under play/pause (hold one to keep stepping), and **Capture still**, which copies the frame on
   screen at the video's full resolution (works for every format, including WebM)
 - **Video tools** (Trim in the viewer): pick a range on the filmstrip, then
@@ -80,8 +90,9 @@ Quartz Gallery.
     Home / End, Ctrl+, for Settings; arrows move between photos (in split view they change the
     preview), Enter opens full screen
   - Viewer: ← → (Page Up / Down) between photos, + / − / 0 zoom, arrows pan while zoomed,
-    F favorite, Delete to trash, E edit, I details, S share, M move, F2 rename, Space plays a video
-  - Video player: Space or K play/pause, ← → 5 s, J / L 10 s, , and . step a frame, M mute,
+    F favorite, Delete to trash, E edit, I details, S share, M move, F2 rename; on a video, Space or K
+    play/pause, J / L 10 s, , and . step a frame, M sound on/off, C capture still
+  - Full video player: Space or K play/pause, ← → 5 s, J / L 10 s, , and . step a frame, M mute,
     S capture still, Home / End
   - Editor: Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save
 - **Settings** (gear icon on Photos and Albums): theme Auto / Light / Dark, Quartz Look, your
@@ -178,7 +189,7 @@ grants Gallery "Media management" access so it stops asking.
 - `ui/PhotosScreen.kt`, `ui/AlbumsScreen.kt`, `ui/TrashScreen.kt` main screens
 - `ui/MediaGrid.kt` + `ui/DragSelect.kt` shared grid with swipe-to-select
 - `ui/MediaActions.kt` move / rename / favorite / trash / restore / delete with Android's prompts
-- `ui/ViewerScreen.kt`, `ui/VideoPlayerScreen.kt` viewer and player
+- `ui/ViewerScreen.kt`, `ui/InlineVideo.kt`, `ui/Filmstrip.kt`, `ui/VideoPlayerScreen.kt` viewer, inline video, filmstrip and full player
 - `edit/EditModel.kt` edit state, filters, text effects, shapes
 - `edit/Fonts.kt` built-in, Google (downloadable) and imported fonts
 - `edit/ColorPicker.kt` color rows, full picker, eyedropper

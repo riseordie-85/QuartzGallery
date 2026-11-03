@@ -58,6 +58,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Volume keys set the media volume (videos), not the ringer
+        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
 
         // Opened from another app: "Open with", "Edit with", or shared to the gallery
         val incoming = Incoming.from(intent, this)
@@ -71,6 +73,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** A volume key while a video is showing turns its sound on (and the key still sets the volume). */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.action == android.view.KeyEvent.ACTION_DOWN && com.tim.gallery.ui.Playback.videoShowing &&
+            (event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN)
+        ) {
+            com.tim.gallery.ui.Playback.muted = false
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** Leaving the app: videos start muted again next time. */
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) com.tim.gallery.ui.Playback.appLeft()
     }
 }
 

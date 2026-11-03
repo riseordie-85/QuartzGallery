@@ -5,6 +5,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Screenshot
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -173,11 +180,40 @@ fun ViewerScreen(
         }
     }
     val current = items.getOrNull(pagerState.currentPage)
+
+    // Videos play right in the viewer: one player, moved to the video page you're on
+    val video = rememberInlineVideo()
+    val settledItem = items.getOrNull(pagerState.settledPage)
+    LaunchedEffect(settledItem?.id, settledItem?.uri) {
+        if (settledItem?.isVideo == true) video.load(settledItem) else video.clear()
+        Playback.videoShowing = settledItem?.isVideo == true
+    }
+    // While a video plays, everything on top fades away after a moment (tap to bring it back)
+    LaunchedEffect(chromeVisible, video.isPlaying, video.scrubbing, current?.id) {
+        if (current?.isVideo == true && chromeVisible && video.isPlaying && !video.scrubbing) {
+            kotlinx.coroutines.delay(3000)
+            chromeVisible = false
+        }
+    }
+    LaunchedEffect(video.ended) { if (video.ended) chromeVisible = true }
+    if (!chromeVisible) ImmersiveMode()
     // Ultra HDR photos: switch the screen into HDR mode while one is showing
     val hdr by produceState(false, current?.id, current?.modified) {
         value = current?.let { UltraHdr.isUltraHdr(context, it) } ?: false
     }
     HdrWindowMode(hdr)
+
+    fun captureStill() {
+        val item = current?.takeIf { it.isVideo && video.itemId == it.id } ?: return
+        video.player.pause()
+        val at = video.player.currentPosition
+        val frame = video.grabFrame()
+        scope.launch {
+            val saved = saveVideoStill(context, item.uri, item.name, at, frame)
+            actions.toast(if (saved != null) "Still saved to ${com.tim.gallery.data.MediaSaver.FOLDER_LABEL}" else "Couldn't capture this frame")
+            if (saved != null) vm.refresh()
+        }
+    }
 
     // Keyboard: arrows/Page keys go between photos (or pan when zoomed in), +/-/0 zoom, F favorite,
     // Delete to trash, E edit, I details, Enter/Space plays a video, Esc back
@@ -202,7 +238,13 @@ fun ViewerScreen(
             !item.isVideo && k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN, itemId = item.id); true }
             !item.isVideo && k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT, itemId = item.id); true }
             !item.isVideo && k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET, itemId = item.id); true }
-            item.isVideo && (k.isEnter || k.key == Key.Spacebar) -> { onPlay(item.id); true }
+            item.isVideo && (k.isEnter || k.key == Key.Spacebar || k.key == Key.K) -> { video.togglePlay(); chromeVisible = true; true }
+            item.isVideo && k.key == Key.J -> { video.jump(-10_000); true }
+            item.isVideo && k.key == Key.L -> { video.jump(10_000); true }
+            item.isVideo && k.key == Key.Comma -> { video.stepFrame(-1); true }
+            item.isVideo && k.key == Key.Period -> { video.stepFrame(1); true }
+            item.isVideo && k.key == Key.M -> { Playback.muted = !Playback.muted; true }
+            item.isVideo && k.key == Key.C -> { captureStill(); true }
             k.key == Key.Spacebar -> { chromeVisible = !chromeVisible; true }
             k.key == Key.I -> { infoFor = item; true }
             k.key == Key.Delete -> {
@@ -235,8 +277,8 @@ fun ViewerScreen(
             if (item.isVideo) {
                 VideoPage(
                     item = item,
+                    video = video,
                     onTap = { chromeVisible = !chromeVisible },
-                    onPlay = { onPlay(item.id) },
                 )
             } else {
                 val request = remember(item.uri, item.modified) {
@@ -303,43 +345,56 @@ fun ViewerScreen(
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.TopCenter),
             ) {
+                // Back on the left, details and more on the right: small floating pills, nothing across the picture
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)))
                         .statusBarsPadding()
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Box(Modifier.size(48.dp).viewerPill(CircleShape), contentAlignment = Alignment.Center) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
                     }
-                    Column(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(
                             formatDate(current.dateMillis),
                             color = Color.White,
-                            style = MaterialTheme.typography.titleSmall,
+                            style = MaterialTheme.typography.titleSmall.copy(shadow = TextShadow),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             if (inTrash) "In trash · ${daysLeftLabel(current)}"
                             else "${current.album} · ${pagerState.currentPage + 1} of ${items.size}",
-                            color = Color.White.copy(alpha = 0.7f),
-                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.bodySmall.copy(shadow = TextShadow),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    IconButton(onClick = { infoFor = current }) {
-                        Icon(Icons.Outlined.Info, contentDescription = "Details", tint = Color.White)
-                    }
-                    if (!inTrash) {
-                        Box {
-                            IconButton(onClick = { menuOpen = true }) {
-                                Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White)
-                            }
+                    Row(Modifier.viewerPill(RoundedCornerShape(50)).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { infoFor = current }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Details", tint = Color.White)
+                        }
+                        if (!inTrash) {
+                            Box {
+                                IconButton(onClick = { menuOpen = true }) {
+                                    Icon(Icons.Filled.MoreVert, contentDescription = "More", tint = Color.White)
+                                }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                if (current.isVideo) {
+                                    DropdownMenuItem(
+                                        text = { Text("Open in player") },
+                                        leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                                        onClick = {
+                                            menuOpen = false
+                                            onPlay(current.id)
+                                        },
+                                    )
+                                }
                                 if (!current.isVideo) {
                                     DropdownMenuItem(
                                         text = { Text("Set as wallpaper") },
@@ -383,6 +438,7 @@ fun ViewerScreen(
                                     },
                                 )
                             }
+                            }
                         }
                     }
                 }
@@ -394,36 +450,89 @@ fun ViewerScreen(
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.BottomCenter),
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))))
-                        .navigationBarsPadding()
-                        .padding(vertical = 8.dp),
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp),
                 ) {
-                    if (inTrash) {
-                        if (current.isVideo) {
-                            ActionButton(Icons.Filled.PlayArrow, "Play") { onPlay(current.id) }
-                        }
-                        ActionButton(Icons.Outlined.RestoreFromTrash, "Restore") { actions.restore(listOf(current)) }
-                        ActionButton(Icons.Outlined.DeleteForever, "Delete forever") { confirmDeleteForever = current }
-                    } else {
-                        if (current.isVideo) {
-                            ActionButton(Icons.Filled.PlayArrow, "Play") { onPlay(current.id) }
-                            ActionButton(Icons.Outlined.ContentCut, "Trim") { onEdit(current.id) }
-                        } else {
-                            ActionButton(Icons.Outlined.Tune, "Edit") {
-                                if (com.tim.gallery.edit.EditRecipes.has(context, current.id)) editChoice = current else onEdit(current.id)
+                    if (current.isVideo) {
+                        // Capture still · play and time · sound
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        ) {
+                            Box(Modifier.size(44.dp).viewerPill(CircleShape), contentAlignment = Alignment.Center) {
+                                IconButton(onClick = { captureStill() }) {
+                                    Icon(Icons.Outlined.Screenshot, contentDescription = "Capture still", tint = Color.White)
+                                }
+                            }
+                            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .viewerPill(RoundedCornerShape(50))
+                                        .clickable { video.togglePlay() }
+                                        .padding(start = 12.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
+                                ) {
+                                    Icon(
+                                        if (video.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                        contentDescription = if (video.isPlaying) "Pause" else "Play",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        "${formatClock(video.position)}  /  ${formatClock(video.duration.takeIf { it > 0 } ?: current.durationMs)}",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleSmall,
+                                    )
+                                }
+                            }
+                            Box(Modifier.size(44.dp).viewerPill(CircleShape), contentAlignment = Alignment.Center) {
+                                IconButton(onClick = { Playback.muted = !Playback.muted }) {
+                                    Icon(
+                                        if (Playback.muted) Icons.AutoMirrored.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp,
+                                        contentDescription = if (Playback.muted) "Turn sound on" else "Mute",
+                                        tint = Color.White,
+                                    )
+                                }
                             }
                         }
-                        ActionButton(
-                            if (current.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                            "Favorite",
-                        ) { actions.setFavorite(listOf(current), favorite = !current.isFavorite) }
-                        ActionButton(Icons.Outlined.Share, "Share") { actions.share(listOf(current)) }
-                        ActionButton(Icons.Outlined.DriveFileMove, "Move") { moving = listOf(current) }
-                        ActionButton(Icons.Outlined.Delete, "Delete") { actions.trash(listOf(current)) }
+                    }
+
+                    // Every item, with the video's frames opened out for scrubbing
+                    Filmstrip(
+                        items = items,
+                        current = pagerState.currentPage,
+                        video = video,
+                        onSelect = { i -> scope.launch { pagerState.scrollToPage(i) } },
+                    )
+
+                    // The actions, in a floating pill
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.viewerPill(RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 4.dp),
+                    ) {
+                        if (inTrash) {
+                            PillButton(Icons.Outlined.RestoreFromTrash, "Restore") { actions.restore(listOf(current)) }
+                            PillButton(Icons.Outlined.DeleteForever, "Delete forever") { confirmDeleteForever = current }
+                        } else {
+                            PillButton(
+                                if (current.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                if (current.isFavorite) "Remove from favorites" else "Favorite",
+                            ) { actions.setFavorite(listOf(current), favorite = !current.isFavorite) }
+                            if (current.isVideo) {
+                                PillButton(Icons.Outlined.ContentCut, "Trim and video tools") { onEdit(current.id) }
+                            } else {
+                                PillButton(Icons.Outlined.Edit, "Edit") {
+                                    if (com.tim.gallery.edit.EditRecipes.has(context, current.id)) editChoice = current else onEdit(current.id)
+                                }
+                            }
+                            PillButton(Icons.Outlined.Share, "Share") { actions.share(listOf(current)) }
+                            PillButton(Icons.AutoMirrored.Outlined.DriveFileMove, "Move") { moving = listOf(current) }
+                            PillButton(Icons.Outlined.Delete, "Delete") { actions.trash(listOf(current)) }
+                        }
                     }
                 }
             }
@@ -535,13 +644,16 @@ fun ViewerScreen(
 
 }
 
+/**
+ * A video page: its thumbnail, with the video playing over it once it's the page you're on.
+ * Tap shows or hides the controls; double-tap the left or right side to jump 10 seconds.
+ */
 @Composable
-private fun VideoPage(item: GalleryItem, onTap: () -> Unit, onPlay: () -> Unit) {
+private fun VideoPage(item: GalleryItem, video: InlineVideo, onTap: () -> Unit) {
+    val playingHere = video.itemId == item.id
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }) },
+        modifier = Modifier.fillMaxSize(),
     ) {
         AsyncImage(
             model = item.thumb(),
@@ -549,16 +661,31 @@ private fun VideoPage(item: GalleryItem, onTap: () -> Unit, onPlay: () -> Unit) 
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
         )
+        if (playingHere) InlineVideoSurface(video, item.id)
         Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(76.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                .clickable(onClick = onPlay),
-        ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(48.dp))
-        }
+            Modifier
+                .fillMaxSize()
+                .pointerInput(playingHere) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onDoubleTap = { p -> if (playingHere) video.jump(if (p.x < size.width / 2f) -10_000L else 10_000L) },
+                    )
+                },
+        )
     }
+}
+
+/** Dark see-through floating pill or circle, with a faint rim, for controls over photos and videos. */
+private fun Modifier.viewerPill(shape: androidx.compose.ui.graphics.Shape): Modifier = this
+    .clip(shape)
+    .background(Color(0xCC1E1E22))
+    .border(androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), shape)
+
+private val TextShadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.7f), androidx.compose.ui.geometry.Offset(0f, 1f), 6f)
+
+@Composable
+private fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick) { Icon(icon, contentDescription = label, tint = Color.White) }
 }
 
 @Composable
