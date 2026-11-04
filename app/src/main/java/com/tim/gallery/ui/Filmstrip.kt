@@ -59,7 +59,8 @@ private val CurrentW = 46.dp
 private val CurrentH = 54.dp
 
 /** How wide the current video's frames run: longer videos get more room, so scrubbing stays fine-grained. */
-private fun blockWidth(durationMs: Long): Dp = (durationMs / 1000f * 9f).coerceIn(136f, 1400f).dp
+// About 14 dp a second: a slow drag moves a frame or two at a time
+private fun blockWidth(durationMs: Long): Dp = (durationMs / 1000f * 14f).coerceIn(180f, 2400f).dp
 
 /**
  * Every item in a strip along the bottom, the current one in the middle. On a video, its part of the
@@ -232,7 +233,7 @@ fun Filmstrip(
 @Composable
 private fun VideoFrames(item: GalleryItem, width: Dp) {
     val context = LocalContext.current
-    val count = ceil(width.value / TileW.value).toInt().coerceIn(2, 48)
+    val count = ceil(width.value / TileW.value).toInt().coerceIn(2, 72)
     val heightPx = with(LocalDensity.current) { CurrentH.roundToPx() }
     val key = "${item.id}:${item.modified}:$count"
     val frames by produceState(FrameCache.get(key) ?: emptyList(), key) {

@@ -144,8 +144,11 @@ class InlineVideo(val player: ExoPlayer) {
         scrubbing = true
         resumeAfterScrub = player.isPlaying || player.playWhenReady && !ended
         player.pause()
-        // Quick, nearby keyframes while dragging; exact on release
-        player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+        // ExoPlayer's scrubbing mode: every seek lands on the exact frame under the playhead (not just
+        // keyframes), with the decoder sped up and seeks it can't keep up with dropped, so it stays live
+        player.setSeekParameters(SeekParameters.EXACT)
+        player.setScrubbingModeParameters(SMOOTH_SCRUBBING)
+        player.setScrubbingModeEnabled(true)
     }
 
     fun scrub(ms: Long) {
@@ -156,6 +159,7 @@ class InlineVideo(val player: ExoPlayer) {
 
     fun endScrub() {
         if (!scrubbing) return
+        player.setScrubbingModeEnabled(false)
         player.setSeekParameters(SeekParameters.EXACT)
         player.seekTo(position)
         scrubbing = false
@@ -174,6 +178,21 @@ class InlineVideo(val player: ExoPlayer) {
         val h0 = vs.height.toFloat()
         val k = min(1f, 4096f / max(w0, h0))
         return runCatching { tv.getBitmap((w0 * k).roundToInt().coerceAtLeast(1), (h0 * k).roundToInt().coerceAtLeast(1)) }.getOrNull()
+    }
+
+    private companion object {
+        /** Show as many in-between frames as the phone can decode, not just the safe keyframes. */
+        val SMOOTH_SCRUBBING: androidx.media3.exoplayer.ScrubbingModeParameters =
+            androidx.media3.exoplayer.ScrubbingModeParameters.Builder()
+                .setDisabledTrackTypes(setOf(C.TRACK_TYPE_AUDIO))
+                // Exact frames: no "close enough" shortcuts
+                .setFractionalSeekTolerance(null, null)
+                .setShouldIncreaseCodecOperatingRate(true)
+                .setShouldEnableDynamicScheduling(true)
+                .setAllowSkippingMediaCodecFlush(true)
+                .setAllowSkippingKeyFrameReset(true)
+                .setUseDecodeOnlyFlag(true)
+                .build()
     }
 
     internal fun applySound(muted: Boolean) {

@@ -45,7 +45,8 @@ Quartz Gallery.
   - **Filmstrip**: every item along the bottom; tap one or drag the strip to move through them
   - **Videos play right in the viewer**: they start on their own when you swipe to them, and you
     swipe on to the next item as with photos. The video's part of the filmstrip opens out into its
-    frames with a playhead: drag it to scrub, keep dragging to move on. Play/pause and time, Capture
+    frames with a playhead: drag it to scrub (frame-accurate, using ExoPlayer's scrubbing mode), keep
+    dragging to move on. Play/pause and time, Capture
     still and the sound button sit above the strip; double-tap a side to jump 10 s. Everything fades
     away while the video plays (tap to bring it back)
   - **Sound**: videos start muted each time the app opens. The speaker button or a volume key turns
