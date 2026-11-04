@@ -191,8 +191,17 @@ fun ViewerScreen(
         }
     }
     val settledItem = settledId?.let { id -> items.firstOrNull { it.id == id } }
-    LaunchedEffect(settledItem?.id, settledItem?.uri) {
-        if (settledItem?.isVideo == true) video.load(settledItem) else video.clear()
+    // A video being trashed, moved, renamed or hidden: the player lets go of its file first (Android
+    // won't change a file that's open). It stays stopped until you press play or move on.
+    var released by remember { mutableStateOf<Long?>(null) }
+    fun release(item: GalleryItem) {
+        if (!item.isVideo) return
+        released = item.id
+        if (video.itemId == item.id) video.clear()
+    }
+    LaunchedEffect(settledItem?.id) { if (released != settledItem?.id) released = null }
+    LaunchedEffect(settledItem?.id, settledItem?.uri, released) {
+        if (settledItem?.isVideo == true && released != settledItem.id) video.load(settledItem) else video.clear()
         Playback.videoShowing = settledItem?.isVideo == true
     }
     // While a video plays, everything on top fades away after a moment (tap to bring it back)
@@ -246,6 +255,7 @@ fun ViewerScreen(
             k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN, itemId = item.id); true }
             k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT, itemId = item.id); true }
             k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET, itemId = item.id); true }
+            item.isVideo && released == item.id && (k.isEnter || k.key == Key.Spacebar || k.key == Key.K) -> { released = null; true }
             item.isVideo && video.itemId == item.id && (k.isEnter || k.key == Key.Spacebar || k.key == Key.K) -> { video.togglePlay(); chromeVisible = true; true }
             item.isVideo && video.itemId == item.id && k.key == Key.J -> { video.jump(-10_000); true }
             item.isVideo && video.itemId == item.id && k.key == Key.L -> { video.jump(10_000); true }
@@ -256,6 +266,7 @@ fun ViewerScreen(
             k.key == Key.Spacebar -> { chromeVisible = !chromeVisible; true }
             k.key == Key.I -> { infoFor = item; true }
             k.key == Key.Delete -> {
+                release(item)
                 if (inTrash) confirmDeleteForever = item else actions.trash(listOf(item))
                 true
             }
@@ -267,8 +278,8 @@ fun ViewerScreen(
                 true
             }
             k.key == Key.S -> { actions.share(listOf(item)); true }
-            k.key == Key.M -> { moving = listOf(item); true }
-            k.key == Key.F2 -> { renaming = item; true }
+            k.key == Key.M -> { release(item); moving = listOf(item); true }
+            k.key == Key.F2 -> { release(item); renaming = item; true }
             else -> false
         }
     }
@@ -437,6 +448,7 @@ fun ViewerScreen(
                                     leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, contentDescription = null) },
                                     onClick = {
                                         menuOpen = false
+                                        release(current)
                                         renaming = current
                                     },
                                 )
@@ -445,6 +457,7 @@ fun ViewerScreen(
                                     leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
                                     onClick = {
                                         menuOpen = false
+                                        release(current)
                                         hiding = current
                                     },
                                 )
@@ -482,7 +495,7 @@ fun ViewerScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .viewerPill(RoundedCornerShape(50))
-                                        .clickable { if (video.itemId == current.id) video.togglePlay() }
+                                        .clickable { if (video.itemId == current.id) video.togglePlay() else if (released == current.id) released = null }
                                         .padding(start = 12.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
                                 ) {
                                     Icon(
@@ -528,7 +541,7 @@ fun ViewerScreen(
                     ) {
                         if (inTrash) {
                             PillButton(Icons.Outlined.RestoreFromTrash, "Restore") { actions.restore(listOf(current)) }
-                            PillButton(Icons.Outlined.DeleteForever, "Delete forever") { confirmDeleteForever = current }
+                            PillButton(Icons.Outlined.DeleteForever, "Delete forever") { release(current); confirmDeleteForever = current }
                         } else {
                             PillButton(
                                 if (current.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -542,8 +555,8 @@ fun ViewerScreen(
                                 }
                             }
                             PillButton(Icons.Outlined.Share, "Share") { actions.share(listOf(current)) }
-                            PillButton(Icons.AutoMirrored.Outlined.DriveFileMove, "Move") { moving = listOf(current) }
-                            PillButton(Icons.Outlined.Delete, "Delete") { actions.trash(listOf(current)) }
+                            PillButton(Icons.AutoMirrored.Outlined.DriveFileMove, "Move") { release(current); moving = listOf(current) }
+                            PillButton(Icons.Outlined.Delete, "Delete") { release(current); actions.trash(listOf(current)) }
                         }
                     }
                 }

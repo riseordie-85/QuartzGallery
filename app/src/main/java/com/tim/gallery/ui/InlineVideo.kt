@@ -82,23 +82,31 @@ class InlineVideo(val player: ExoPlayer) {
 
     internal var texture: TextureView? = null
 
+    // Where the last video stopped, so letting go of a file and picking it up again carries on from there
+    private var lastId: Long? = null
+    private var lastPosition = 0L
+
     fun load(item: GalleryItem) {
         if (itemId == item.id && uri == item.uri) return
+        val start = if (item.id == lastId) lastPosition else 0L
         itemId = item.id
         uri = item.uri
         shownId = null
         ended = false
-        position = 0L
+        position = start
         duration = item.durationMs.coerceAtLeast(0L)
         aspect = 0f
         error = null
-        player.setMediaItem(MediaItem.fromUri(item.uri))
+        player.setMediaItem(MediaItem.fromUri(item.uri), start)
         player.prepare()
         player.playWhenReady = true
     }
 
+    /** Stops and lets go of the file (so it can be trashed, moved or renamed). */
     fun clear() {
         if (itemId == null) return
+        lastId = itemId
+        lastPosition = player.currentPosition
         itemId = null
         uri = null
         shownId = null
