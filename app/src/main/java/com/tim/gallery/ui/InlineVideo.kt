@@ -73,6 +73,9 @@ class InlineVideo(val player: ExoPlayer) {
     /** Width / height of the picture as shown (0 until known). */
     var aspect by mutableFloatStateOf(0f)
 
+    /** Why the video can't play (null while it's fine). */
+    var error by mutableStateOf<String?>(null)
+
     /** The user is dragging the timeline: playback position comes from the drag, not the player. */
     var scrubbing by mutableStateOf(false)
     private var resumeAfterScrub = false
@@ -88,6 +91,7 @@ class InlineVideo(val player: ExoPlayer) {
         position = 0L
         duration = item.durationMs.coerceAtLeast(0L)
         aspect = 0f
+        error = null
         player.setMediaItem(MediaItem.fromUri(item.uri))
         player.prepare()
         player.playWhenReady = true
@@ -98,11 +102,19 @@ class InlineVideo(val player: ExoPlayer) {
         itemId = null
         uri = null
         shownId = null
+        error = null
         player.stop()
         player.clearMediaItems()
     }
 
     fun togglePlay() {
+        if (player.playbackState == Player.STATE_IDLE && itemId != null) {
+            // After an error: try again
+            error = null
+            player.prepare()
+            player.play()
+            return
+        }
         when {
             ended -> {
                 player.seekTo(0)
@@ -154,7 +166,8 @@ class InlineVideo(val player: ExoPlayer) {
     /** The frame on screen, at the video's own resolution (for Capture still). */
     fun grabFrame(): Bitmap? {
         val tv = texture ?: return null
-        if (!tv.isAvailable) return null
+        // Nothing on screen yet: let the caller fall back to reading the frame from the file
+        if (!tv.isAvailable || shownId == null || shownId != itemId) return null
         val vs = player.videoSize
         if (vs.width <= 0 || vs.height <= 0) return tv.bitmap
         val w0 = vs.width * vs.pixelWidthHeightRatio
@@ -194,6 +207,10 @@ fun rememberInlineVideo(): InlineVideo {
             override fun onPlaybackStateChanged(state: Int) {
                 video.ended = state == Player.STATE_ENDED
                 if (player.duration != C.TIME_UNSET && player.duration > 0) video.duration = player.duration
+            }
+
+            override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
+                video.error = e.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')
             }
 
             override fun onRenderedFirstFrame() {

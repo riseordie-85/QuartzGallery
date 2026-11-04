@@ -101,12 +101,16 @@ fun Filmstrip(
         return hit.index to ((center - hit.offset).toFloat() / hit.size.coerceAtLeast(1)).coerceIn(0f, 1f)
     }
 
-    LaunchedEffect(dragged) {
-        if (dragged && !userScroll) {
+    // Scrolls the strip makes itself while following playback (anything else is the user: finger, wheel, trackpad)
+    val ownScrolls = remember { intArrayOf(0) }
+    LaunchedEffect(dragged, state.isScrollInProgress) {
+        if ((dragged || state.isScrollInProgress && ownScrolls[0] == 0) && !userScroll) {
             frozenExpanded = liveExpanded
             userScroll = true
         }
     }
+    // Never leave a video paused mid-scrub when the strip goes away (controls hidden, viewer closed)
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { video.endScrub() } }
 
     // The user moves the strip: scrub the open video, or step to whatever passes the middle
     LaunchedEffect(userScroll) {
@@ -140,21 +144,31 @@ fun Filmstrip(
         if (userScroll || currentItem == null) return@LaunchedEffect
         val far = lastIndex < 0 || abs(lastIndex - current) > 4
         lastIndex = current
+        suspend fun own(block: suspend () -> Unit) {
+            ownScrolls[0]++
+            try {
+                block()
+            } finally {
+                ownScrolls[0]--
+            }
+        }
         if (expandedId == currentItem.id) {
-            val blockPx = with(density) { blockWidth(durationOf(currentItem)).toPx() }
             var shown = -1
             while (true) {
+                // Re-read each step: the real duration (and so the frames' width) can arrive after loading
                 val d = durationOf(currentItem).coerceAtLeast(1L)
-                val px = ((video.position.toFloat() / d).coerceIn(0f, 1f) * blockPx).roundToInt()
+                val blockPx = with(density) { blockWidth(d).toPx() }
+                val pos = if (video.itemId == currentItem.id) video.position else 0L
+                val px = ((pos.toFloat() / d).coerceIn(0f, 1f) * blockPx).roundToInt()
                 if (px != shown) {
-                    if (shown < 0 && !far) state.animateScrollToItem(current, px) else state.scrollToItem(current, px)
+                    own { if (shown < 0 && !far) state.animateScrollToItem(current, px) else state.scrollToItem(current, px) }
                     shown = px
                 }
                 delay(33)
             }
         } else {
             val half = with(density) { (CurrentW / 2).toPx() }.roundToInt()
-            if (far) state.scrollToItem(current, half) else state.animateScrollToItem(current, half)
+            own { if (far) state.scrollToItem(current, half) else state.animateScrollToItem(current, half) }
         }
     }
 
@@ -220,8 +234,15 @@ private fun VideoFrames(item: GalleryItem, width: Dp) {
     val context = LocalContext.current
     val count = ceil(width.value / TileW.value).toInt().coerceIn(2, 48)
     val heightPx = with(LocalDensity.current) { CurrentH.roundToPx() }
-    val frames by produceState<List<Bitmap?>>(emptyList(), item.id, item.modified, count) {
-        value = VideoTools.filmstrip(context, item.uri, count, heightPx)
+    val key = "${item.id}:${item.modified}:$count"
+    val frames by produceState(FrameCache.get(key) ?: emptyList(), key) {
+        FrameCache.get(key)?.let {
+            value = it
+            return@produceState
+        }
+        val got = VideoTools.filmstrip(context, item.uri, count, heightPx)
+        if (got.isNotEmpty()) FrameCache.put(key, got)
+        value = got
     }
     Box(
         Modifier
@@ -243,4 +264,9 @@ private fun VideoFrames(item: GalleryItem, width: Dp) {
             }
         }
     }
+}
+
+/** Recent videos' filmstrip frames, so showing the controls again doesn't decode them all again. */
+private object FrameCache : android.util.LruCache<String, List<Bitmap?>>(24 * 1024 * 1024) {
+    override fun sizeOf(key: String, value: List<Bitmap?>): Int = value.sumOf { it?.allocationByteCount ?: 0 }.coerceAtLeast(1)
 }

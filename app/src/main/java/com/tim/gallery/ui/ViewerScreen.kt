@@ -183,14 +183,21 @@ fun ViewerScreen(
 
     // Videos play right in the viewer: one player, moved to the video page you're on
     val video = rememberInlineVideo()
-    val settledItem = items.getOrNull(pagerState.settledPage)
+    // The settled page's item, found by its key: right after the list changes (a new still, a deleted
+    // photo) the page number can briefly point at a neighbour, which would restart or swap the video
+    val settledId by remember {
+        androidx.compose.runtime.derivedStateOf {
+            pagerState.layoutInfo.visiblePagesInfo.firstOrNull { it.index == pagerState.settledPage }?.key as? Long
+        }
+    }
+    val settledItem = settledId?.let { id -> items.firstOrNull { it.id == id } }
     LaunchedEffect(settledItem?.id, settledItem?.uri) {
         if (settledItem?.isVideo == true) video.load(settledItem) else video.clear()
         Playback.videoShowing = settledItem?.isVideo == true
     }
     // While a video plays, everything on top fades away after a moment (tap to bring it back)
-    LaunchedEffect(chromeVisible, video.isPlaying, video.scrubbing, current?.id) {
-        if (current?.isVideo == true && chromeVisible && video.isPlaying && !video.scrubbing) {
+    LaunchedEffect(chromeVisible, video.isPlaying, video.scrubbing, current?.id, menuOpen, infoFor, Playback.muted) {
+        if (current?.isVideo == true && chromeVisible && video.isPlaying && !video.scrubbing && !menuOpen && infoFor == null) {
             kotlinx.coroutines.delay(3000)
             chromeVisible = false
         }
@@ -216,7 +223,8 @@ fun ViewerScreen(
     }
 
     // Keyboard: arrows/Page keys go between photos (or pan when zoomed in), +/-/0 zoom, F favorite,
-    // Delete to trash, E edit, I details, Enter/Space plays a video, Esc back
+    // Delete to trash, E edit, I details, S share, M move, Esc back; on a video Space/Enter/K play-pause,
+    // J/L 10 s, ,/. a frame, M sound, C capture still
     fun goTo(page: Int) {
         if (items.isEmpty()) return
         val p = page.coerceIn(0, items.lastIndex)
@@ -238,13 +246,13 @@ fun ViewerScreen(
             !item.isVideo && k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN, itemId = item.id); true }
             !item.isVideo && k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT, itemId = item.id); true }
             !item.isVideo && k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET, itemId = item.id); true }
-            item.isVideo && (k.isEnter || k.key == Key.Spacebar || k.key == Key.K) -> { video.togglePlay(); chromeVisible = true; true }
-            item.isVideo && k.key == Key.J -> { video.jump(-10_000); true }
-            item.isVideo && k.key == Key.L -> { video.jump(10_000); true }
-            item.isVideo && k.key == Key.Comma -> { video.stepFrame(-1); true }
-            item.isVideo && k.key == Key.Period -> { video.stepFrame(1); true }
-            item.isVideo && k.key == Key.M -> { Playback.muted = !Playback.muted; true }
-            item.isVideo && k.key == Key.C -> { captureStill(); true }
+            item.isVideo && video.itemId == item.id && (k.isEnter || k.key == Key.Spacebar || k.key == Key.K) -> { video.togglePlay(); chromeVisible = true; true }
+            item.isVideo && video.itemId == item.id && k.key == Key.J -> { video.jump(-10_000); true }
+            item.isVideo && video.itemId == item.id && k.key == Key.L -> { video.jump(10_000); true }
+            item.isVideo && video.itemId == item.id && k.key == Key.Comma -> { video.stepFrame(-1); true }
+            item.isVideo && video.itemId == item.id && k.key == Key.Period -> { video.stepFrame(1); true }
+            item.isVideo && video.itemId == item.id && k.key == Key.M -> { Playback.muted = !Playback.muted; true }
+            item.isVideo && video.itemId == item.id && k.key == Key.C -> { captureStill(); true }
             k.key == Key.Spacebar -> { chromeVisible = !chromeVisible; true }
             k.key == Key.I -> { infoFor = item; true }
             k.key == Key.Delete -> {
@@ -471,18 +479,19 @@ fun ViewerScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .viewerPill(RoundedCornerShape(50))
-                                        .clickable { video.togglePlay() }
+                                        .clickable { if (video.itemId == current.id) video.togglePlay() }
                                         .padding(start = 12.dp, end = 18.dp, top = 6.dp, bottom = 6.dp),
                                 ) {
                                     Icon(
-                                        if (video.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                        contentDescription = if (video.isPlaying) "Pause" else "Play",
+                                        if (video.isPlaying && video.itemId == current.id) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                        contentDescription = if (video.isPlaying && video.itemId == current.id) "Pause" else "Play",
                                         tint = Color.White,
                                         modifier = Modifier.size(28.dp),
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(
-                                        "${formatClock(video.position)}  /  ${formatClock(video.duration.takeIf { it > 0 } ?: current.durationMs)}",
+                                        if (video.itemId == current.id) "${formatClock(video.position)}  /  ${formatClock(video.duration.takeIf { it > 0 } ?: current.durationMs)}"
+                                        else "${formatClock(0)}  /  ${formatClock(current.durationMs)}",
                                         color = Color.White,
                                         style = MaterialTheme.typography.titleSmall,
                                     )
@@ -668,10 +677,27 @@ private fun VideoPage(item: GalleryItem, video: InlineVideo, onTap: () -> Unit) 
                 .pointerInput(playingHere) {
                     detectTapGestures(
                         onTap = { onTap() },
-                        onDoubleTap = { p -> if (playingHere) video.jump(if (p.x < size.width / 2f) -10_000L else 10_000L) },
+                        onDoubleTap = if (playingHere) {
+                            { p -> video.jump(if (p.x < size.width / 2f) -10_000L else 10_000L) }
+                        } else {
+                            null
+                        },
                     )
                 },
         )
+        val error = video.error
+        if (playingHere && error != null) {
+            Text(
+                "Can't play this video here ($error).\nTry ⋮ → Open in player.",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier
+                    .padding(32.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(16.dp),
+            )
+        }
     }
 }
 
