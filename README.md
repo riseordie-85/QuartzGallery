@@ -47,7 +47,8 @@ Quartz Gallery.
     swipe on to the next item as with photos. The video's part of the filmstrip opens out into its
     frames with a playhead: drag it to scrub (frame-accurate, using ExoPlayer's scrubbing mode), keep
     dragging to move on. Play/pause and time, Capture
-    still and the sound button sit above the strip; double-tap a side to jump 10 s. Everything fades
+    still and the sound button sit above the strip. Double-tap or pinch to zoom into a video
+    (drag to look around), just like photos. Everything fades
     away while the video plays (tap to bring it back)
   - **Sound**: videos start muted each time the app opens. The speaker button or a volume key turns
     the sound on, and it stays on for the next videos until you leave the app

@@ -52,7 +52,10 @@ fun ZoomableImage(
     content: (@Composable (Modifier) -> Unit)? = null,
     /** Keyboard zoom and pan (+, -, 0, arrows while zoomed): a fresh [ZoomKey] each press. */
     zoomKey: ZoomKey? = null,
+    /** With [content] (e.g. a video): its width / height, so panning stops at its edges. 0 = fills the box. */
+    contentAspect: Float = 0f,
 ) {
+    val shownAspect by rememberUpdatedState(contentAspect)
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -69,8 +72,9 @@ fun ZoomableImage(
     fun fitted(): Pair<Float, Float> {
         val bw = boxSize.width.toFloat()
         val bh = boxSize.height.toFloat()
-        if (aspect <= 0f || bw <= 0f || bh <= 0f) return bw to bh
-        return if (bw / bh > aspect) (bh * aspect) to bh else bw to (bw / aspect)
+        val a = if (aspect > 0f) aspect else shownAspect
+        if (a <= 0f || bw <= 0f || bh <= 0f) return bw to bh
+        return if (bw / bh > a) (bh * a) to bh else bw to (bw / a)
     }
     // Zoom that fills the box (a panorama's height fills the screen)
     fun fillZoom(): Float {

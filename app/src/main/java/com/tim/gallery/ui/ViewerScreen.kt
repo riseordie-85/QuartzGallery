@@ -243,9 +243,9 @@ fun ViewerScreen(
             k.isAny(Key.DirectionRight, Key.PageDown) -> { goTo(pagerState.currentPage + 1); true }
             k.key == Key.MoveHome -> { goTo(0); true }
             k.key == Key.MoveEnd -> { goTo(items.lastIndex); true }
-            !item.isVideo && k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN, itemId = item.id); true }
-            !item.isVideo && k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT, itemId = item.id); true }
-            !item.isVideo && k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET, itemId = item.id); true }
+            k.isZoomIn -> { zoomKey = ZoomKey(ZoomKey.Action.IN, itemId = item.id); true }
+            k.isZoomOut -> { zoomKey = ZoomKey(ZoomKey.Action.OUT, itemId = item.id); true }
+            k.isZoomReset -> { zoomKey = ZoomKey(ZoomKey.Action.RESET, itemId = item.id); true }
             item.isVideo && video.itemId == item.id && (k.isEnter || k.key == Key.Spacebar || k.key == Key.K) -> { video.togglePlay(); chromeVisible = true; true }
             item.isVideo && video.itemId == item.id && k.key == Key.J -> { video.jump(-10_000); true }
             item.isVideo && video.itemId == item.id && k.key == Key.L -> { video.jump(10_000); true }
@@ -286,7 +286,10 @@ fun ViewerScreen(
                 VideoPage(
                     item = item,
                     video = video,
+                    isCurrent = page == pagerState.currentPage,
                     onTap = { chromeVisible = !chromeVisible },
+                    onZoomChange = { if (page == pagerState.currentPage) zoomed = it },
+                    zoomKey = zoomKey?.takeIf { page == pagerState.currentPage && it.itemId == item.id },
                 )
             } else {
                 val request = remember(item.uri, item.modified) {
@@ -658,32 +661,39 @@ fun ViewerScreen(
  * Tap shows or hides the controls; double-tap the left or right side to jump 10 seconds.
  */
 @Composable
-private fun VideoPage(item: GalleryItem, video: InlineVideo, onTap: () -> Unit) {
+private fun VideoPage(
+    item: GalleryItem,
+    video: InlineVideo,
+    isCurrent: Boolean,
+    onTap: () -> Unit,
+    onZoomChange: (Boolean) -> Unit,
+    zoomKey: ZoomKey?,
+) {
     val playingHere = video.itemId == item.id
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.fillMaxSize(),
     ) {
-        AsyncImage(
-            model = item.thumb(),
+        // Double-tap or pinch to zoom, drag to look around, the same as photos
+        ZoomableImage(
+            model = null,
             contentDescription = item.name,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (playingHere) InlineVideoSurface(video, item.id)
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pointerInput(playingHere) {
-                    detectTapGestures(
-                        onTap = { onTap() },
-                        onDoubleTap = if (playingHere) {
-                            { p -> video.jump(if (p.x < size.width / 2f) -10_000L else 10_000L) }
-                        } else {
-                            null
-                        },
+            isCurrent = isCurrent,
+            onTap = onTap,
+            onZoomChange = onZoomChange,
+            zoomKey = zoomKey,
+            contentAspect = if (playingHere) video.aspect else 0f,
+            content = { m ->
+                Box(m, contentAlignment = Alignment.Center) {
+                    AsyncImage(
+                        model = item.thumb(),
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize(),
                     )
-                },
+                    if (playingHere) InlineVideoSurface(video, item.id)
+                }
+            },
         )
         val error = video.error
         if (playingHere && error != null) {
