@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Photo frame widget: starts 2×2, any size, settings reachable again from the widget -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.tim.gallery.widget.PhotoFrameConfigActivity"
+    android:description="@string/photo_frame_description"
+    android:initialLayout="@layout/widget_photo_frame"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="60dp"
+    android:minResizeHeight="60dp"
+    android:previewImage="@drawable/widget_photo_frame_preview"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable" />

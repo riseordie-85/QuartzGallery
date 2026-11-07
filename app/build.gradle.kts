@@ -12,8 +12,8 @@ android {
         applicationId = "com.tim.gallery"
         minSdk = 33 // Android 13+ (photo editing uses Android 13 GPU shaders)
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.4"
+        versionCode = 15
+        versionName = "1.5"
     }
 
     buildTypes {

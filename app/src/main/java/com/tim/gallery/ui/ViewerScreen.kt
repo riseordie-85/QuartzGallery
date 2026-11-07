@@ -11,6 +11,7 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.outlined.Screenshot
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -418,6 +419,16 @@ fun ViewerScreen(
                                     )
                                 }
                                 if (!current.isVideo) {
+                                    if (!current.isVideo) DropdownMenuItem(
+                                        text = { Text("Put on home screen") },
+                                        leadingIcon = { Icon(Icons.Outlined.Widgets, contentDescription = null) },
+                                        onClick = {
+                                            menuOpen = false
+                                            if (!com.tim.gallery.widget.PhotoFrames.pin(context, current.id, current.uri)) {
+                                                actions.toast("Add it from your home screen: long-press, Widgets, Quartz Gallery, Photo frame")
+                                            }
+                                        },
+                                    )
                                     DropdownMenuItem(
                                         text = { Text("Set as wallpaper") },
                                         leadingIcon = { Icon(Icons.Outlined.Wallpaper, contentDescription = null) },

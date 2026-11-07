@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Quartz Gallery</string>
+    <string name="photo_frame_label">Photo frame</string>
+    <string name="photo_frame_description">A photo of yours in a frame, with a drop shadow</string>
 </resources>

@@ -87,6 +87,13 @@ Quartz Gallery.
   - Open with: a viewer with **Save to gallery** and **Edit**
   - Edit with: straight into the editor; the edit is saved as a copy in Pictures/Gallery
   - Share several photos or videos: look through them, then **Save all to an album**
+- **Photo frame widget**: a photo of yours on the home screen, framed, with a drop shadow
+  - Add it from the home screen's widget list (Quartz Gallery → Photo frame), or from a photo:
+    ⋮ → Put on home screen
+  - Frames: none, rounded, instant photo, gallery mat, black, wood, gold, Quartz crystal
+  - Drop shadow from none to strong; show the whole photo (the frame takes its shape) or fill the widget
+  - Resize it freely; change the photo or frame later from the widget's settings (long-press it)
+  - Tap it to open the photo in the gallery
 - **Keyboard** (Bluetooth keyboards, DeX, Chromebooks):
   - Grids: Ctrl+F or / to search, Ctrl+A select all, Delete to trash the selection, Esc to clear,
     Home / End, Ctrl+, for Settings; arrows move between photos (in split view they change the
@@ -202,6 +209,9 @@ grants Gallery "Media management" access so it stops asking.
   Launcher), `Glass.kt` frosted glass, bar shapes and edge lighting, `Bars.kt` top bar, Photos / Albums
   bar and menus, `Look.kt` the settings; `ui/LookScreen.kt` its settings screen
 - `Incoming.kt` photos and videos shared or opened from other apps
+- `widget/` the photo frame widget: `FrameRenderer.kt` draws the frames and shadow,
+  `PhotoFrames.kt` settings and updates, `PhotoFrameWidget.kt` the widget, `PhotoFrameConfigActivity.kt`
+  its settings screen
 - `ui/Keys.kt` keyboard shortcuts
 - `data/Search.kt`, `data/Metadata.kt` search/sort and photo details
 - `video/` trim, GIF and frame export, GIF reader/writer

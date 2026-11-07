@@ -63,13 +63,16 @@ class MainActivity : ComponentActivity() {
 
         // Opened from another app: "Open with", "Edit with", or shared to the gallery
         val incoming = Incoming.from(intent, this)
+        // Tapped a photo frame on the home screen: open that photo
+        val framePhoto = intent?.takeIf { it.action == com.tim.gallery.widget.PhotoFrames.ACTION_OPEN_PHOTO }
+            ?.getLongExtra(com.tim.gallery.widget.PhotoFrames.EXTRA_PHOTO_ID, -1L)?.takeIf { it > 0 }
 
         setContent {
             GalleryTheme {
                 if (incoming != null) {
                     IncomingRoot(incoming, onClose = { finish() })
                 } else {
-                    GalleryRoot()
+                    GalleryRoot(openPhoto = framePhoto)
                 }
             }
         }
@@ -101,11 +104,15 @@ private fun NavHostController.switchTab(tab: MainTab) {
 }
 
 @Composable
-private fun GalleryRoot() {
+private fun GalleryRoot(openPhoto: Long? = null) {
     val vm: GalleryViewModel = viewModel()
 
     PermissionGate(onRefresh = { vm.refresh() }) { access, requestAccess ->
         val nav = rememberNavController()
+        // From a photo frame: straight to its photo (Back goes to Photos)
+        androidx.compose.runtime.LaunchedEffect(openPhoto) {
+            if (openPhoto != null) nav.navigate("viewer/$openPhoto?album=${encodeKey(AlbumOps.ALL_KEY)}")
+        }
         // App-wide actions, so "Undo" still works after leaving the screen that did something
         val rootActions = com.tim.gallery.ui.rememberMediaActions(vm)
         Box(Modifier.fillMaxSize()) {

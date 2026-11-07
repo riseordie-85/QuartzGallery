@@ -73,6 +73,31 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
+
+        <!-- Photo frame widget and its settings screen -->
+        <receiver
+            android:name=".widget.PhotoFrameWidget"
+            android:exported="true"
+            android:label="@string/photo_frame_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/photo_frame_info" />
+        </receiver>
+
+        <activity
+            android:name=".widget.PhotoFrameConfigActivity"
+            android:exported="true"
+            android:label="@string/photo_frame_label"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.tim.gallery.photoframe">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>
