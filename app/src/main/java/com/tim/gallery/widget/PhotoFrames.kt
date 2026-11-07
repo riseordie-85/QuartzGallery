@@ -71,7 +71,8 @@ object PhotoFrames {
 
     /** The photo chosen with "Put on home screen", for the frame that's about to appear. */
     internal fun setPending(context: Context, photoId: Long, uri: String) {
-        prefs(context).edit().putLong("pending_id", photoId).putString("pending_uri", uri).apply()
+        prefs(context).edit().putLong("pending_id", photoId).putString("pending_uri", uri)
+            .putLong("pending_at", System.currentTimeMillis()).apply()
     }
 
     internal fun clearPending(context: Context) {
@@ -82,14 +83,17 @@ object PhotoFrames {
         val p = prefs(context)
         val id = p.getLong("pending_id", -1L)
         val uri = p.getString("pending_uri", null)
-        return if (id > 0 && uri != null) id to uri else null
+        // Only for a frame being placed right now (not one added from the widget list much later)
+        val fresh = System.currentTimeMillis() - p.getLong("pending_at", 0L) < 3 * 60_000L
+        return if (id > 0 && uri != null && fresh) id to uri else null
     }
 
-    /** The widget's size on screen in pixels (as it's laid out on a phone held upright). */
-    fun sizePx(context: Context, widgetId: Int): Pair<Int, Int> {
+    /** The widget's size on screen in pixels, upright (portrait) or sideways (landscape). */
+    fun sizePx(context: Context, widgetId: Int, landscape: Boolean = false): Pair<Int, Int> {
         val opts: Bundle = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
-        val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 } ?: 180
-        val hDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 180
+        // Android's convention: upright uses the narrowest width and tallest height, sideways the reverse
+        val wDp = opts.getInt(if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 } ?: 180
+        val hDp = opts.getInt(if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 180
         val d = context.resources.displayMetrics.density
         var w = wDp * d
         var h = hDp * d
@@ -101,37 +105,83 @@ object PhotoFrames {
         return w.roundToInt().coerceAtLeast(64) to h.roundToInt().coerceAtLeast(64)
     }
 
-    /** Draws one widget and hands it to the home screen. Slow-ish (decodes the photo): call off the main thread. */
-    fun update(context: Context, widgetId: Int) {
-        val mgr = AppWidgetManager.getInstance(context)
-        val views = RemoteViews(context.packageName, R.layout.widget_photo_frame)
-        val config = load(context, widgetId)
-        val (w, h) = sizePx(context, widgetId)
-        val photo = config?.let { FrameRenderer.loadPhoto(context, Uri.parse(it.uri), max(w, h)) }
-        if (config == null || photo == null) {
-            views.setViewVisibility(R.id.frame, View.GONE)
-            views.setViewVisibility(R.id.empty, View.VISIBLE)
-            views.setTextViewText(
-                R.id.empty,
-                if (config == null) "Tap to choose a photo" else "Photo not found.\nTap to choose another",
-            )
-            views.setOnClickPendingIntent(R.id.root, settingsIntent(context, widgetId))
-        } else {
-            val framed = FrameRenderer.render(photo, w, h, config.style, config.shadow, config.fill)
-            photo.recycle()
-            views.setViewVisibility(R.id.empty, View.GONE)
-            views.setViewVisibility(R.id.frame, View.VISIBLE)
-            views.setImageViewBitmap(R.id.frame, framed)
-            views.setContentDescription(R.id.frame, "Photo frame")
-            views.setOnClickPendingIntent(R.id.root, openPhotoIntent(context, widgetId, config.photoId))
+    // One drawing at a time (photos are big), and for each widget only its newest request is drawn
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "photo-frames") }
+    private val requests = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+    private val lastDrawn = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
+    /** Redraws [widgetIds] in the background; [done] runs afterwards (to finish a broadcast). */
+    fun queue(context: Context, widgetIds: IntArray, force: Boolean = false, done: () -> Unit = {}) {
+        val app = context.applicationContext
+        val tickets = widgetIds.map { id -> id to requests.merge(id, 1, Int::plus)!! }
+        worker.execute {
+            try {
+                for ((id, ticket) in tickets) {
+                    if (requests[id] != ticket) continue
+                    runCatching { update(app, id, force) }
+                }
+            } finally {
+                done()
+            }
         }
-        mgr.updateAppWidget(widgetId, views)
     }
 
-    fun updateAll(context: Context) {
+    /** Draws one widget (upright and sideways) and hands it to the home screen. Runs on the worker. */
+    private fun update(context: Context, widgetId: Int, force: Boolean) {
         val mgr = AppWidgetManager.getInstance(context)
-        mgr.getAppWidgetIds(ComponentName(context, PhotoFrameWidget::class.java)).forEach { update(context, it) }
+        val config = load(context, widgetId)
+        val portrait = sizePx(context, widgetId, landscape = false)
+        val landscape = sizePx(context, widgetId, landscape = true)
+        val key = "$config|$portrait|$landscape"
+        if (!force && config != null && lastDrawn[widgetId] == key) return
+        val longest = maxOf(portrait.first, portrait.second, landscape.first, landscape.second)
+        val photo = config?.let { FrameRenderer.loadPhoto(context, Uri.parse(it.uri), longest) }
+        val views = if (config == null || photo == null) {
+            RemoteViews(context.packageName, R.layout.widget_photo_frame).apply {
+                setViewVisibility(R.id.frame, View.GONE)
+                setViewVisibility(R.id.empty, View.VISIBLE)
+                setTextViewText(R.id.empty, if (config == null) "Tap to choose a photo" else "Photo not found.\nTap to choose another")
+                setOnClickPendingIntent(R.id.root, settingsIntent(context, widgetId))
+            }
+        } else {
+            fun framed(size: Pair<Int, Int>) = RemoteViews(context.packageName, R.layout.widget_photo_frame).apply {
+                setViewVisibility(R.id.empty, View.GONE)
+                setViewVisibility(R.id.frame, View.VISIBLE)
+                setImageViewBitmap(R.id.frame, FrameRenderer.render(photo, size.first, size.second, config.style, config.shadow, config.fill))
+                setOnClickPendingIntent(R.id.root, openPhotoIntent(context, widgetId, config.photoId))
+            }
+            // Same shape both ways (most phones): one picture; otherwise one for each (folds, tablets)
+            val pa = portrait.first.toFloat() / portrait.second
+            val la = landscape.first.toFloat() / landscape.second
+            val result = if (kotlin.math.abs(pa / la - 1f) < 0.08f) framed(portrait) else RemoteViews(framed(landscape), framed(portrait))
+            photo.recycle()
+            result
+        }
+        mgr.updateAppWidget(widgetId, views)
+        if (config != null && photo != null) lastDrawn[widgetId] = key else lastDrawn.remove(widgetId)
     }
+
+    fun forget(widgetIds: IntArray) {
+        widgetIds.forEach {
+            lastDrawn.remove(it)
+            requests.remove(it)
+        }
+    }
+
+    /** After a backup is restored the widgets get new ids: carry each frame's settings over. */
+    fun moveIds(context: Context, oldIds: IntArray, newIds: IntArray) {
+        val p = prefs(context)
+        val e = p.edit()
+        oldIds.zip(newIds).forEach { (old, new) ->
+            p.getString("w$old", null)?.let { e.putString("w$new", it) }
+            e.remove("w$old")
+        }
+        e.apply()
+    }
+
+    /** Is [widgetId] one of this app's frames? (A placed-frame message must be about a real one.) */
+    internal fun isOurs(context: Context, widgetId: Int): Boolean =
+        AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, PhotoFrameWidget::class.java)).contains(widgetId)
 
     /** Tapping the frame opens its photo in the gallery. */
     private fun openPhotoIntent(context: Context, widgetId: Int, photoId: Long): PendingIntent {
@@ -139,18 +189,25 @@ object PhotoFrames {
             .setAction(ACTION_OPEN_PHOTO)
             .setData(Uri.parse("quartzgallery://frame/$widgetId"))
             .putExtra(EXTRA_PHOTO_ID, photoId)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            // Back to the gallery as it was (an edit in progress stays), with the photo opened on top
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         return PendingIntent.getActivity(context, widgetId, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    /** A frame without a photo opens its settings. */
-    private fun settingsIntent(context: Context, widgetId: Int): PendingIntent {
-        val intent = Intent(context, PhotoFrameConfigActivity::class.java)
+    /** The frames on the home screen right now. */
+    fun frameIds(context: Context): List<Int> =
+        AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, PhotoFrameWidget::class.java)).toList()
+
+    /** Opens a frame's settings screen. */
+    fun settingsActivityIntent(context: Context, widgetId: Int): Intent =
+        Intent(context, PhotoFrameConfigActivity::class.java)
             .setData(Uri.parse("quartzgallery://frame-settings/$widgetId"))
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        return PendingIntent.getActivity(context, widgetId, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-    }
+
+    /** A frame without a photo opens its settings. */
+    private fun settingsIntent(context: Context, widgetId: Int): PendingIntent =
+        PendingIntent.getActivity(context, widgetId, settingsActivityIntent(context, widgetId), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
     /**
      * Asks the home screen to place a new frame showing this photo. False when the home screen

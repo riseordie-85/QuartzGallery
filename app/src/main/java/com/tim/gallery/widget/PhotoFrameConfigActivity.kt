@@ -69,7 +69,6 @@ import com.tim.gallery.ui.MediaGrid
 import com.tim.gallery.ui.PermissionGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.concurrent.thread
 import kotlin.math.roundToInt
 
 /**
@@ -113,9 +112,12 @@ class PhotoFrameConfigActivity : ComponentActivity() {
     private fun done(config: FrameConfig) {
         PhotoFrames.save(this, widgetId, config)
         PhotoFrames.clearPending(this)
-        val app = applicationContext
-        val id = widgetId
-        thread(name = "photo-frame") { runCatching { PhotoFrames.update(app, id) } }
+        // Redraw through the widget itself, which keeps the app awake until it's drawn
+        sendBroadcast(
+            Intent(this, PhotoFrameWidget::class.java)
+                .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(widgetId)),
+        )
         setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId))
         finish()
     }
@@ -157,6 +159,8 @@ private fun FrameSettings(
     val (ww, wh) = widgetSize
     val preview by produceState<Bitmap?>(null, photo, style, shadow, fill, ww, wh) {
         val p = photo ?: return@produceState
+        // Wait for the slider to pause: a new value cancels this before the (uncancellable) drawing starts
+        kotlinx.coroutines.delay(60)
         value = withContext(Dispatchers.Default) { FrameRenderer.render(p, ww, wh, style, shadow, fill) }
     }
 

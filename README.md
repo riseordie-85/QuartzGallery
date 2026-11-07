@@ -92,7 +92,8 @@ Quartz Gallery.
     ⋮ → Put on home screen
   - Frames: none, rounded, instant photo, gallery mat, black, wood, gold, Quartz crystal
   - Drop shadow from none to strong; show the whole photo (the frame takes its shape) or fill the widget
-  - Resize it freely; change the photo or frame later from the widget's settings (long-press it)
+  - Resize it freely; change the photo or frame later from the widget's settings (long-press it), or
+    from Settings → Photo frames
   - Tap it to open the photo in the gallery
 - **Keyboard** (Bluetooth keyboards, DeX, Chromebooks):
   - Grids: Ctrl+F or / to search, Ctrl+A select all, Delete to trash the selection, Esc to clear,

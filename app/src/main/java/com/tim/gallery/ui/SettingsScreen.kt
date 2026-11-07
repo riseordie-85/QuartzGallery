@@ -1,6 +1,7 @@
 package com.tim.gallery.ui
 
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Widgets
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -145,6 +146,54 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPersonal: () -> Unit, onOpenLook: (
                     supportingContent = { Text("Quartz backgrounds and 5-point gradients, crystal patterns, glass bars and edge lighting") },
                     modifier = Modifier.clickable(onClick = onOpenLook),
                 )
+            }
+
+            // The photo frames on the home screen: change one's photo or frame from here too
+            item {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val frames = remember { com.tim.gallery.widget.PhotoFrames.frameIds(context) }
+                var choosing by remember { mutableStateOf(false) }
+                fun open(id: Int) = context.startActivity(com.tim.gallery.widget.PhotoFrames.settingsActivityIntent(context, id))
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = { Icon(Icons.Outlined.Widgets, contentDescription = null) },
+                    headlineContent = { Text("Photo frames") },
+                    supportingContent = {
+                        Text(
+                            when (frames.size) {
+                                0 -> "Add one from your home screen's widgets, or a photo's ⋮ → Put on home screen"
+                                1 -> "Change the photo or frame on your home screen"
+                                else -> "${frames.size} on your home screen: change a photo or frame"
+                            },
+                        )
+                    },
+                    modifier = if (frames.isEmpty()) Modifier else Modifier.clickable {
+                        if (frames.size == 1) open(frames[0]) else choosing = true
+                    },
+                )
+                if (choosing) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { choosing = false },
+                        title = { Text("Which photo frame?") },
+                        text = {
+                            Column {
+                                frames.forEachIndexed { n, id ->
+                                    val c = com.tim.gallery.widget.PhotoFrames.load(context, id)
+                                    ListItem(
+                                        headlineContent = { Text("Frame ${n + 1}") },
+                                        supportingContent = { Text(c?.style?.label ?: "No photo yet") },
+                                        modifier = Modifier.clickable {
+                                            choosing = false
+                                            open(id)
+                                        },
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = { androidx.compose.material3.TextButton(onClick = { choosing = false }) { Text("Cancel") } },
+                    )
+                }
             }
 
             item {

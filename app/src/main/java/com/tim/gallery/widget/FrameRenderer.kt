@@ -42,9 +42,9 @@ object FrameRenderer {
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             val w = info.size.width
             val h = info.size.height
-            var sample = 1
-            while (max(w, h) / (sample * 2) >= maxSide) sample *= 2
-            if (sample > 1) decoder.setTargetSampleSize(sample)
+            // Straight to the size needed (not the next power of two up), to keep memory down
+            val k = maxSide.toFloat() / max(w, h)
+            if (k < 1f) decoder.setTargetSize(max(1, (w * k).toInt()), max(1, (h * k).toInt()))
         }
     }.getOrNull()
 

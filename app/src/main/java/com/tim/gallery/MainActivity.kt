@@ -63,19 +63,33 @@ class MainActivity : ComponentActivity() {
 
         // Opened from another app: "Open with", "Edit with", or shared to the gallery
         val incoming = Incoming.from(intent, this)
-        // Tapped a photo frame on the home screen: open that photo
-        val framePhoto = intent?.takeIf { it.action == com.tim.gallery.widget.PhotoFrames.ACTION_OPEN_PHOTO }
-            ?.getLongExtra(com.tim.gallery.widget.PhotoFrames.EXTRA_PHOTO_ID, -1L)?.takeIf { it > 0 }
+        // Tapped a photo frame on the home screen: open that photo (not again when the activity is recreated)
+        if (savedInstanceState == null) takeFrameRequest(intent)
 
         setContent {
             GalleryTheme {
                 if (incoming != null) {
                     IncomingRoot(incoming, onClose = { finish() })
                 } else {
-                    GalleryRoot(openPhoto = framePhoto)
+                    GalleryRoot(openPhoto = openPhoto)
                 }
             }
         }
+    }
+
+    /** A photo to open, from a photo frame on the home screen (cleared once opened). */
+    private val openPhoto = androidx.compose.runtime.mutableStateOf<Long?>(null)
+
+    private fun takeFrameRequest(intent: android.content.Intent?) {
+        val id = intent?.takeIf { it.action == com.tim.gallery.widget.PhotoFrames.ACTION_OPEN_PHOTO }
+            ?.getLongExtra(com.tim.gallery.widget.PhotoFrames.EXTRA_PHOTO_ID, -1L)?.takeIf { it > 0 }
+        if (id != null) openPhoto.value = id
+    }
+
+    /** A frame tapped while the gallery is already open: open its photo on top of whatever's showing. */
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        takeFrameRequest(intent)
     }
 
     /** A volume key while a video is showing turns its sound on (and the key still sets the volume). */
@@ -104,14 +118,20 @@ private fun NavHostController.switchTab(tab: MainTab) {
 }
 
 @Composable
-private fun GalleryRoot(openPhoto: Long? = null) {
+private fun GalleryRoot(openPhoto: androidx.compose.runtime.MutableState<Long?>) {
     val vm: GalleryViewModel = viewModel()
 
     PermissionGate(onRefresh = { vm.refresh() }) { access, requestAccess ->
         val nav = rememberNavController()
-        // From a photo frame: straight to its photo (Back goes to Photos)
-        androidx.compose.runtime.LaunchedEffect(openPhoto) {
-            if (openPhoto != null) nav.navigate("viewer/$openPhoto?album=${encodeKey(AlbumOps.ALL_KEY)}")
+        // From a photo frame: its photo, once the photos have loaded (Back goes to where you were)
+        val wanted = openPhoto.value
+        androidx.compose.runtime.LaunchedEffect(wanted) {
+            if (wanted == null) return@LaunchedEffect
+            kotlinx.coroutines.withTimeoutOrNull(10_000) {
+                while (vm.find(wanted) == null) kotlinx.coroutines.delay(100)
+            }
+            openPhoto.value = null
+            if (vm.find(wanted) != null) nav.navigate("viewer/$wanted?album=${encodeKey(AlbumOps.ALL_KEY)}")
         }
         // App-wide actions, so "Undo" still works after leaving the screen that did something
         val rootActions = com.tim.gallery.ui.rememberMediaActions(vm)

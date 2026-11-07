@@ -419,7 +419,7 @@ fun ViewerScreen(
                                     )
                                 }
                                 if (!current.isVideo) {
-                                    if (!current.isVideo) DropdownMenuItem(
+                                    DropdownMenuItem(
                                         text = { Text("Put on home screen") },
                                         leadingIcon = { Icon(Icons.Outlined.Widgets, contentDescription = null) },
                                         onClick = {
