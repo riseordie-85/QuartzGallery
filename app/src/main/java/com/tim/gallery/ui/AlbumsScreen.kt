@@ -62,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tim.gallery.settings.AppSettings
 import com.tim.gallery.GalleryViewModel
 import com.tim.gallery.data.Album
 import com.tim.gallery.data.AlbumOps
@@ -84,6 +85,7 @@ fun AlbumsScreen(
 ) {
     val albums by vm.albums.collectAsStateWithLifecycle()
     val trash by vm.trash.collectAsStateWithLifecycle()
+    val hiddenAlbums by AppSettings.hiddenAlbums.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val canManageMedia = rememberCanManageMedia()
     var creating by remember { mutableStateOf(false) }
@@ -148,7 +150,7 @@ fun AlbumsScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             items(albums, key = { it.key }) { album ->
-                AlbumCard(album = album, onClick = { onOpenAlbum(album.key) })
+                AlbumCard(album = album, hiddenFromPhotos = album.key in hiddenAlbums, onClick = { onOpenAlbum(album.key) })
             }
             item(key = AlbumOps.TRASH_KEY) {
                 TrashCard(count = trash.size, onClick = onOpenTrash)
@@ -187,7 +189,7 @@ fun AlbumsScreen(
 }
 
 @Composable
-private fun AlbumCard(album: Album, onClick: () -> Unit) {
+private fun AlbumCard(album: Album, hiddenFromPhotos: Boolean = false, onClick: () -> Unit) {
     Column(Modifier.clickable(onClick = onClick)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             AlbumThumb(album, size = maxWidth, corner = 18.dp)
@@ -200,9 +202,11 @@ private fun AlbumCard(album: Album, onClick: () -> Unit) {
             modifier = Modifier.padding(top = 8.dp),
         )
         Text(
-            if (album.count == 0) "Empty" else itemCount(album.count),
+            (if (album.count == 0) "Empty" else itemCount(album.count)) + if (hiddenFromPhotos) " · hidden from Photos" else "",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -426,6 +430,22 @@ fun AlbumScreen(
                                         confirmCleanup = true
                                     },
                                 )
+                                // Keep this album's photos out of the Photos tab (the album itself stays here)
+                                if (!isFavorites && !isStickers) {
+                                    val hiddenAlbums by AppSettings.hiddenAlbums.collectAsStateWithLifecycle()
+                                    val isHidden = albumKey in hiddenAlbums
+                                    DropdownMenuItem(
+                                        text = { Text(if (isHidden) "Show in Photos" else "Hide from Photos") },
+                                        onClick = {
+                                            menuOpen = false
+                                            AppSettings.setAlbumHidden(albumKey, !isHidden)
+                                            actions.toast(
+                                                if (isHidden) "Its photos show in Photos again"
+                                                else "Hidden from Photos. It's still here in Albums",
+                                            )
+                                        },
+                                    )
+                                }
                             }
                         }
                     },
@@ -535,7 +555,16 @@ fun AlbumScreen(
             onDismiss = { renaming = false },
             onConfirm = { name ->
                 renaming = false
-                actions.renameAlbum(album, name) { newKey -> if (newKey != null) onRenamed(newKey) }
+                actions.renameAlbum(album, name) { newKey ->
+                    if (newKey != null) {
+                        // A hidden album stays hidden under its new name
+                        if (album.key in AppSettings.hiddenAlbums.value) {
+                            AppSettings.setAlbumHidden(album.key, false)
+                            AppSettings.setAlbumHidden(newKey, true)
+                        }
+                        onRenamed(newKey)
+                    }
+                }
             },
         )
     }

@@ -286,7 +286,8 @@ private fun PhotoPicker(onPick: (Long, Uri) -> Unit, onCancel: () -> Unit) {
     val vm: GalleryViewModel = viewModel()
     BackHandler { onCancel() }
     PermissionGate(onRefresh = { vm.refresh() }) { _, _ ->
-        val all by vm.items.collectAsState()
+        // Every photo, including albums hidden from the Photos tab
+        val all by vm.allItems.collectAsState()
         val photos = remember(all) { all.filter { !it.isVideo } }
         QuartzScaffold(
             topBar = {

@@ -55,12 +55,16 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     /** Search text for the Photos tab ("" = no search). */
     val query = MutableStateFlow("")
 
-    /** What the Photos tab shows: All / Photos / Videos filter, search, and sort. Stickers are left out. */
+    /**
+     * What the Photos tab shows: All / Photos / Videos filter, search, and sort. Stickers and albums hidden
+     * from Photos are left out (a search still finds photos in hidden albums).
+     */
     val items: StateFlow<List<GalleryItem>> =
-        combine(all, typeFilter, query, AppSettings.sort) { list, type, q, sort ->
+        combine(all, typeFilter, query, AppSettings.sort, AppSettings.hiddenAlbums) { list, type, q, sort, hidden ->
             val search = Search.compile(q)
             list.filter { item ->
-                !AlbumOps.isStickers(item.relativePath) && when (type) {
+                !AlbumOps.isStickers(item.relativePath) &&
+                    (search != null || item.relativePath !in hidden) && when (type) {
                     TypeFilter.ALL -> true
                     TypeFilter.PHOTOS -> !item.isVideo
                     TypeFilter.VIDEOS -> item.isVideo

@@ -65,6 +65,16 @@ object AppSettings {
         prefs?.edit()?.putString("look", l.toJson())?.apply()
     }
 
+    /** Albums kept out of the Photos tab; they're still on the Albums screen. Keys are folder paths ("Pictures/Memes/"). */
+    private val _hiddenAlbums = MutableStateFlow<Set<String>>(emptySet())
+    val hiddenAlbums: StateFlow<Set<String>> = _hiddenAlbums.asStateFlow()
+
+    fun setAlbumHidden(key: String, hidden: Boolean) {
+        val next = if (hidden) _hiddenAlbums.value + key else _hiddenAlbums.value - key
+        _hiddenAlbums.value = next
+        prefs?.edit()?.putStringSet("hidden_albums", HashSet(next))?.apply()
+    }
+
     private val _sort = MutableStateFlow(SortSettings())
     val sort: StateFlow<SortSettings> = _sort.asStateFlow()
 
@@ -100,6 +110,8 @@ object AppSettings {
             field = runCatching { SortField.valueOf(p.getString("sort_field", null) ?: "TAKEN") }.getOrDefault(SortField.TAKEN),
             descending = p.getBoolean("sort_desc", true),
         )
+        // A copy: Android's returned set mustn't be changed or kept
+        _hiddenAlbums.value = p.getStringSet("hidden_albums", null)?.toSet() ?: emptySet()
         _gridCell.value = p.getInt("grid_cell", 96).let { v -> GRID_CELL_SIZES.minByOrNull { kotlin.math.abs(it - v) } ?: 96 }
     }
 

@@ -11,6 +11,9 @@ Quartz Gallery.
 ## Features
 - **Photos tab**: everything grouped by month under big month headings, with an
   **All / Photos / Videos** dropdown in the top bar
+  - **Hide an album from Photos**: open the album, ⋮ → Hide from Photos. Its photos stay in the album
+    (marked "hidden from Photos" on the Albums screen) and a search still finds them; ⋮ → Show in Photos
+    undoes it
   - **Search** by file name, album, month, year or type ("video", "favorite", "screenshot", "gif"...)
   - **Sort** by date taken, date added, size or name, either direction (albums too)
   - **Pinch the grid** to make thumbnails bigger or smaller; it remembers your choice
