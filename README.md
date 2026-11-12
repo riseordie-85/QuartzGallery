@@ -8,6 +8,16 @@ duplicate finding — happens on the phone. The only things fetched are backgrou
 and Google Fonts, and those are downloaded by Google Play services in its own process, not by
 Quartz Gallery.
 
+## Screenshots
+<p align="center">
+  <img src="docs/screenshots/grid-unfolded.webp" alt="The photo grid on one half of an unfolded phone, with the selected photo and its details on the other" width="100%">
+</p>
+<p align="center">
+  <img src="docs/screenshots/grid-phone.webp" alt="The photo grid on a phone, grouped under November 2026" width="32%">
+  <img src="docs/screenshots/markup-text.webp" alt="Markup adding a speech bubble and an emoji to a mountain photo" width="32%">
+  <img src="docs/screenshots/markup-sticker.webp" alt="An astronaut cutout placed as a sticker on a mountain lake photo" width="32%">
+</p>
+
 ## Features
 - **Photos tab**: everything grouped by month under big month headings, with an
   **All / Photos / Videos** dropdown in the top bar
